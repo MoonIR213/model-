@@ -2,60 +2,38 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Agent Proxy Interface</title>
+<title>Agent Interface</title>
 
 <style>
-:root {
-    --bg-main: #070c13;
-    --bg-header: #0b1220;
-    --bg-table: #0e1625;
-    --border: #1f2a3c;
-    --text-main: #e5e7eb;
-    --text-muted: #9ca3af;
-    --green: #00ff88;
-    --red: #ff4d4d;
-    --blue: #3b82f6;
-    --teal: #10b981;
-}
-
-* {
-    box-sizing: border-box;
-}
-
 body {
     margin: 0;
-    background: var(--bg-main);
-    color: var(--text-main);
-    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: #070c13;
+    color: #e5e7eb;
+    font-family: "Segoe UI", Arial, sans-serif;
 }
 
-/* ===== Header ===== */
 .header {
-    background: linear-gradient(180deg, #0b1220, #060a14);
     padding: 25px 40px;
+    background: linear-gradient(180deg, #0b1220, #060a14);
 }
 
 .header h1 {
     margin: 0;
     font-size: 26px;
-    font-weight: 600;
 }
 
 .header small {
-    color: var(--text-muted);
-    font-size: 14px;
+    color: #9ca3af;
 }
 
-/* ===== Container ===== */
 .container {
     padding: 30px 40px;
 }
 
-/* ===== Table ===== */
 table {
     width: 100%;
     border-collapse: collapse;
-    background: var(--bg-table);
+    background: #0e1625;
 }
 
 thead {
@@ -63,9 +41,8 @@ thead {
 }
 
 th, td {
-    padding: 14px 12px;
+    padding: 14px;
     text-align: left;
-    font-size: 14px;
 }
 
 th {
@@ -74,97 +51,64 @@ th {
 }
 
 tbody tr {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #1f2a3c;
 }
 
-tbody tr:hover {
-    background: rgba(255,255,255,0.03);
-}
-
-/* ===== Badges ===== */
-.badge {
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    display: inline-block;
-}
-
-.HTTP {
-    background: var(--blue);
-}
-
-.HTTPS {
-    background: var(--teal);
-}
-
-/* ===== Status ===== */
 .online {
-    color: var(--green);
-    font-weight: 600;
-}
-
-.offline {
-    color: var(--red);
-    font-weight: 600;
+    color: #00ff88;
+    font-weight: bold;
 }
 </style>
 </head>
 
 <body>
 
-<!-- ===== Header ===== -->
 <div class="header">
-    <h1>⚡ Agent Proxy Interface</h1>
-    <small id="info">Loading proxies...</small>
+    <h1>⚡ Agent Interface</h1>
+    <small id="info">Loading agents...</small>
 </div>
 
-<!-- ===== Content ===== -->
 <div class="container">
     <table>
         <thead>
             <tr>
-                <th>IP</th>
-                <th>Port</th>
-                <th>Type</th>
-                <th>Country</th>
-                <th>Latency</th>
+                <th>Agent ID</th>
+                <th>IP (REAL)</th>
+                <th>Hostname</th>
+                <th>Last Seen</th>
                 <th>Status</th>
             </tr>
         </thead>
-        <tbody id="proxyTable">
-            <!-- Filled by JS -->
-        </tbody>
+        <tbody id="agentTable"></tbody>
     </table>
 </div>
 
 <script>
-async function loadProxies() {
-    const res = await fetch("/api/proxies");
+async function loadAgents() {
+    const res = await fetch("/api/agents");
     const data = await res.json();
 
     document.getElementById("info").innerText =
-        `Showing ${data.shown} of ${data.total} proxies (auto refresh every ${data.refresh}s)`;
+        `Showing ${data.length} connected agents (auto refresh every 5s)`;
 
-    const table = document.getElementById("proxyTable");
+    const table = document.getElementById("agentTable");
     table.innerHTML = "";
 
-    data.proxies.forEach(p => {
+    data.forEach(a => {
         table.innerHTML += `
         <tr>
-            <td>${p.ip}</td>
-            <td>${p.port}</td>
-            <td><span class="badge ${p.type}">${p.type}</span></td>
-            <td>${p.country}</td>
-            <td>${p.latency}</td>
-            <td class="${p.status}">${p.status}</td>
+            <td>${a.agent_id}</td>
+            <td>${a.ip}</td>
+            <td>${a.hostname || "-"}</td>
+            <td>${a.last_seen}</td>
+            <td class="online">${a.status}</td>
         </tr>
         `;
     });
 }
 
-loadProxies();
-setInterval(loadProxies, 5000);
+loadAgents();
+setInterval(loadAgents, 5000);
 </script>
 
 </body>

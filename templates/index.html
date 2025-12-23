@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
 <title>Agent Proxy Interface</title>
@@ -9,55 +9,28 @@ body{
   background:#0b0f14;
   color:#e5e7eb;
   font-family:Segoe UI, Tahoma, sans-serif;
-  padding:20px;
 }
-
-h1{
-  margin:0;
-  font-size:26px;
-}
-
-p{
-  margin:6px 0 15px;
-  color:#9ca3af;
-}
-
+h1{margin:10px 0;}
 table{
   width:100%;
   border-collapse:collapse;
   margin-top:10px;
 }
-
 th,td{
-  padding:10px 12px;
+  padding:8px 10px;
   border-bottom:1px solid #1f2937;
   font-size:14px;
-  text-align:left;
 }
-
-th{
-  background:#111827;
-}
-
-.badge{
-  padding:3px 8px;
-  border-radius:5px;
-  font-size:12px;
-  font-weight:600;
-}
-
-.http{background:#1e40af;}
-.https{background:#065f46;}
-
-.online{color:#22c55e;font-weight:600;}
-.offline{color:#ef4444;font-weight:600;}
+th{background:#111827;}
+.online{color:#22c55e;}
+.offline{color:#ef4444;}
 </style>
 </head>
 
 <body>
 
-<h1>🛰 Agent Proxy Interface</h1>
-<p>Showing agents (auto refresh every 5s)</p>
+<h1>⚡ Agent Proxy Interface</h1>
+<p>Live agents (auto update every 5s)</p>
 
 <table>
 <thead>
@@ -66,42 +39,34 @@ th{
   <th>Type</th>
   <th>Country</th>
   <th>City</th>
-  <th>Latency</th>
   <th>Status</th>
 </tr>
 </thead>
-
 <tbody id="agents"></tbody>
 </table>
 
 <script>
 async function loadAgents(){
   const res = await fetch("/agents");
-  const agents = await res.json();
+  const data = await res.json();
 
   const tbody = document.getElementById("agents");
   tbody.innerHTML = "";
 
-  agents.forEach(a=>{
+  data.forEach(a=>{
     tbody.innerHTML += `
       <tr>
-        <td>${a.ip || "-"}</td>
-        <td>
-          <span class="badge ${a.type === 'HTTPS' ? 'https' : 'http'}">
-            ${a.type || "HTTP"}
-          </span>
-        </td>
-        <td>${a.country || "-"}</td>
-        <td>${a.city || "-"}</td>
-        <td>${a.latency ?? "-"} ms</td>
+        <td>${a.ip}</td>
+        <td>${a.type}</td>
+        <td>${a.country}</td>
+        <td>${a.city}</td>
         <td class="${a.status}">${a.status}</td>
-      </tr>
-    `;
+      </tr>`;
   });
 }
 
-setInterval(loadAgents, 5000);
 loadAgents();
+setInterval(loadAgents, 5000);
 </script>
 
 </body>

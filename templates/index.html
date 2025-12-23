@@ -16,62 +16,51 @@ table{
   margin-top:10px;
 }
 th,td{
-  padding:8px 10px;
+  padding:10px;
   border-bottom:1px solid #1f2937;
   font-size:14px;
 }
-th{
-  background:#111827;
-  text-align:left;
-}
-.online{color:#22c55e;}
-.offline{color:#ef4444;}
+th{background:#111827;}
+.online{color:#22c55e;font-weight:bold;}
+.offline{color:#ef4444;font-weight:bold;}
 .badge{
   padding:2px 6px;
   border-radius:4px;
   font-size:12px;
 }
-.http{background:#1e40af;}
-.https{background:#065f46;}
 </style>
 </head>
 <body>
 
-<h1>⚡ Agent Proxy Interface</h1>
-<p>Showing agents (auto refresh every 5s)</p>
+<h1>⚡ Agent Proxy Interface</h1️
+<p>Live agents (auto refresh every 5s)</p>
 
 <table>
 <thead>
 <tr>
-  <th>IP</th>
-  <th>Port</th>
-  <th>Type</th>
-  <th>Country</th>
-  <th>Latency</th>
+  <th>Agent ID</th>
   <th>Status</th>
+  <th>Last Seen (s)</th>
 </tr>
 </thead>
-<tbody id="rows"></tbody>
+<tbody id="agents"></tbody>
 </table>
 
 <script>
 async function loadAgents(){
-  const res = await fetch("https://web-production-d9bf.up.railway.app/agents");
+  const res = await fetch("/agents");
   const data = await res.json();
-  const tbody = document.getElementById("rows");
+  const tbody = document.getElementById("agents");
   tbody.innerHTML = "";
 
   data.forEach(a=>{
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${a.ip}</td>
-      <td>${a.port}</td>
-      <td><span class="badge ${a.type.toLowerCase()}">${a.type}</span></td>
-      <td>${a.country}</td>
-      <td>${a.latency} ms</td>
-      <td class="${a.status}">${a.status}</td>
+    tbody.innerHTML += `
+      <tr>
+        <td>${a.agent_id}</td>
+        <td class="${a.status}">${a.status}</td>
+        <td>${a.last_seen}</td>
+      </tr>
     `;
-    tbody.appendChild(tr);
   });
 }
 

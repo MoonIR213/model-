@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-requests
-websockets
 jinja2
+websockets
+requests

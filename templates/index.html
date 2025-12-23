@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Agent Proxy Interface</title>
+<title>⚡ Agent Proxy Interface</title>
 <style>
 body{
   background:#0b0f14;
@@ -20,23 +20,34 @@ th,td{
   border-bottom:1px solid #1f2937;
   font-size:14px;
 }
-th{background:#111827;}
+th{
+  background:#111827;
+  text-align:left;
+}
 .online{color:#22c55e;}
 .offline{color:#ef4444;}
+.badge{
+  padding:2px 6px;
+  border-radius:4px;
+  font-size:12px;
+}
+.http{background:#1e40af;}
+.https{background:#065f46;}
 </style>
 </head>
 <body>
 
 <h1>⚡ Agent Proxy Interface</h1>
-<p>Live agents (auto update every 5s)</p>
+<p>Showing agents (auto refresh every 5s)</p>
 
 <table>
 <thead>
 <tr>
   <th>IP</th>
+  <th>Port</th>
   <th>Type</th>
   <th>Country</th>
-  <th>City</th>
+  <th>Latency</th>
   <th>Status</th>
 </tr>
 </thead>
@@ -44,25 +55,28 @@ th{background:#111827;}
 </table>
 
 <script>
-async function load(){
-  const r = await fetch('/agents');
-  const data = await r.json();
-  const body = document.getElementById('rows');
-  body.innerHTML = '';
+async function loadAgents(){
+  const res = await fetch("https://web-production-d9bf.up.railway.app/agents");
+  const data = await res.json();
+  const tbody = document.getElementById("rows");
+  tbody.innerHTML = "";
+
   data.forEach(a=>{
-    body.innerHTML += `
-      <tr>
-        <td>${a.ip}</td>
-        <td>${a.type}</td>
-        <td>${a.country}</td>
-        <td>${a.city}</td>
-        <td class="${a.status}">${a.status}</td>
-      </tr>
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${a.ip}</td>
+      <td>${a.port}</td>
+      <td><span class="badge ${a.type.toLowerCase()}">${a.type}</span></td>
+      <td>${a.country}</td>
+      <td>${a.latency} ms</td>
+      <td class="${a.status}">${a.status}</td>
     `;
+    tbody.appendChild(tr);
   });
 }
-load();
-setInterval(load,5000);
+
+loadAgents();
+setInterval(loadAgents, 5000);
 </script>
 
 </body>

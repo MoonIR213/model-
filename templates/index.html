@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <title>Agent Proxy Interface</title>
-
 <style>
 body{
   background:#0b0f14;
@@ -26,7 +25,6 @@ th{background:#111827;}
 .offline{color:#ef4444;}
 </style>
 </head>
-
 <body>
 
 <h1>⚡ Agent Proxy Interface</h1>
@@ -42,31 +40,29 @@ th{background:#111827;}
   <th>Status</th>
 </tr>
 </thead>
-<tbody id="agents"></tbody>
+<tbody id="rows"></tbody>
 </table>
 
 <script>
-async function loadAgents(){
-  const res = await fetch("/agents");
-  const data = await res.json();
-
-  const tbody = document.getElementById("agents");
-  tbody.innerHTML = "";
-
+async function load(){
+  const r = await fetch('/agents');
+  const data = await r.json();
+  const body = document.getElementById('rows');
+  body.innerHTML = '';
   data.forEach(a=>{
-    tbody.innerHTML += `
+    body.innerHTML += `
       <tr>
         <td>${a.ip}</td>
         <td>${a.type}</td>
         <td>${a.country}</td>
         <td>${a.city}</td>
         <td class="${a.status}">${a.status}</td>
-      </tr>`;
+      </tr>
+    `;
   });
 }
-
-loadAgents();
-setInterval(loadAgents, 5000);
+load();
+setInterval(load,5000);
 </script>
 
 </body>

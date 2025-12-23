@@ -1,14 +1,11 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio, time, socket
+import time
 
 app = FastAPI()
 
-# =======================
-# CORS
-# =======================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,101 +13,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =======================
-# Templates
-# =======================
 templates = Jinja2Templates(directory="templates")
 
-# =======================
-# Storage
-# =======================
+# agent_id -> agent data
 agents = {}
-ws_agents = {}
 
 # =======================
-# ROOT → DASHBOARD
+# UI
 # =======================
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request}
+        {"request": request, "agents": list(agents.values())}
     )
 
 # =======================
-# API STATUS (اختياري)
+# STATUS
 # =======================
 @app.get("/status")
 async def status():
-    return {
-        "status": "Online",
-        "agents": len(agents)
-    }
+    return {"status": "Online", "agents": len(agents)}
 
 # =======================
-# REGISTER AGENT
+# REGISTER (HTTP)
 # =======================
 @app.post("/agent/register")
 async def register_agent(data: dict):
     agent_id = data["agent_id"]
+
     agents[agent_id] = {
         "agent_id": agent_id,
-        "ip": data.get("ip"),
-        "city": data.get("city"),
-        "country": data.get("country"),
-        "type": data.get("type", "HTTP/HTTPS"),
-        "status": "online",
+        "ip": data.get("ip", "unknown"),
+        "country": data.get("country", "N/A"),
+        "city": data.get("city", "N/A"),
+        "type": data.get("type", "HTTP"),
         "latency": None,
-        "last_seen": time.time()
+        "status": "online",
+        "ws": None
     }
     return {"ok": True}
 
 # =======================
-# HEARTBEAT
-# =======================
-@app.post("/agent/heartbeat")
-async def heartbeat(data: dict):
-    agent_id = data["agent_id"]
-    if agent_id in agents:
-        agents[agent_id]["last_seen"] = time.time()
-        agents[agent_id]["status"] = "online"
-    return {"ok": True}
-
-# =======================
-# LIST AGENTS (FOR JS)
-# =======================
-@app.get("/agents")
-async def list_agents():
-    return list(agents.values())
-
-# =======================
-# WEBSOCKET
+# WEBSOCKET (الحقيقة المطلقة)
 # =======================
 @app.websocket("/ws/{agent_id}")
 async def ws_agent(websocket: WebSocket, agent_id: str):
     await websocket.accept()
-    ws_agents[agent_id] = websocket
-    print(f"[WS] Connected: {agent_id}")
+
+    if agent_id not in agents:
+        await websocket.close()
+        return
+
+    agents[agent_id]["ws"] = websocket
+    agents[agent_id]["status"] = "online"
+    print(f"[WS CONNECTED] {agent_id}")
 
     try:
         while True:
-            await websocket.receive_text()
+            await websocket.receive_text()  # keep alive
     except WebSocketDisconnect:
-        ws_agents.pop(agent_id, None)
-        if agent_id in agents:
-            agents[agent_id]["status"] = "offline"
-        print(f"[WS] Disconnected: {agent_id}")
-
-# =======================
-# CLEANUP OFFLINE
-# =======================
-@app.on_event("startup")
-async def cleanup_loop():
-    async def loop():
-        while True:
-            now = time.time()
-            for a in agents.values():
-                if now - a["last_seen"] > 15:
-                    a["status"] = "offline"
-            await asyncio.sleep(5)
-    asyncio.create_task(loop())
+        print(f"[WS DISCONNECTED] {agent_id}")
+        agents[agent_id]["status"] = "offline"
+        agents[agent_id]["ws"] = None

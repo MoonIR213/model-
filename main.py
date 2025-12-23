@@ -1,8 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-import time
 
 app = FastAPI()
 
@@ -15,29 +14,31 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory="templates")
 
-# agent_id -> agent data
-agents = {}
+# =========================
+# STORAGE
+# =========================
+agents = {}  # agent_id -> data
 
-# =======================
+# =========================
 # UI
-# =======================
+# =========================
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "agents": list(agents.values())}
+        {"request": request}
     )
 
-# =======================
-# STATUS
-# =======================
-@app.get("/status")
-async def status():
-    return {"status": "Online", "agents": len(agents)}
+# =========================
+# API: LIST AGENTS (🔥 هذا كان ناقص)
+# =========================
+@app.get("/agents")
+async def list_agents():
+    return list(agents.values())
 
-# =======================
-# REGISTER (HTTP)
-# =======================
+# =========================
+# REGISTER AGENT
+# =========================
 @app.post("/agent/register")
 async def register_agent(data: dict):
     agent_id = data["agent_id"]
@@ -45,18 +46,18 @@ async def register_agent(data: dict):
     agents[agent_id] = {
         "agent_id": agent_id,
         "ip": data.get("ip", "unknown"),
+        "type": data.get("type", "HTTP"),
         "country": data.get("country", "N/A"),
         "city": data.get("city", "N/A"),
-        "type": data.get("type", "HTTP"),
         "latency": None,
-        "status": "online",
-        "ws": None
+        "status": "online"
     }
+
     return {"ok": True}
 
-# =======================
-# WEBSOCKET (الحقيقة المطلقة)
-# =======================
+# =========================
+# WEBSOCKET (الحالة الحقيقية)
+# =========================
 @app.websocket("/ws/{agent_id}")
 async def ws_agent(websocket: WebSocket, agent_id: str):
     await websocket.accept()
@@ -65,14 +66,12 @@ async def ws_agent(websocket: WebSocket, agent_id: str):
         await websocket.close()
         return
 
-    agents[agent_id]["ws"] = websocket
     agents[agent_id]["status"] = "online"
-    print(f"[WS CONNECTED] {agent_id}")
+    print(f"[CONNECTED] {agent_id}")
 
     try:
         while True:
-            await websocket.receive_text()  # keep alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        print(f"[WS DISCONNECTED] {agent_id}")
+        print(f"[DISCONNECTED] {agent_id}")
         agents[agent_id]["status"] = "offline"
-        agents[agent_id]["ws"] = None

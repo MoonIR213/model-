@@ -1,72 +1,96 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Response
-import asyncio
-import base64
-import uuid
-import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import asyncio, time, uuid
 
 app = FastAPI()
-agents = {}
-pending_tasks = {} # قاموس لتخزين الوعود (Futures) الخاصة بكل طلب
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =======================
+# STORAGE
+# =======================
+agents = {}          # agent_id -> info
+ws_agents = {}       # agent_id -> websocket
+
+# =======================
+# BASIC STATUS
+# =======================
 @app.get("/")
 async def status():
-    return {"status": "Online", "agent_connected": "main" in agents}
+    return {
+        "status": "Online",
+        "agents": len(agents)
+    }
 
-@app.websocket("/ws/oran_pc")
-async def websocket_endpoint(websocket: WebSocket):
+# =======================
+# REGISTER AGENT
+# =======================
+@app.post("/agent/register")
+async def register_agent(data: dict):
+    agent_id = data["agent_id"]
+    agents[agent_id] = {
+        "agent_id": agent_id,
+        "ip": data.get("ip"),
+        "city": data.get("city"),
+        "country": data.get("country"),
+        "type": data.get("type", "HTTP/HTTPS"),
+        "status": "online",
+        "latency": None,
+        "last_seen": time.time()
+    }
+    return {"ok": True}
+
+# =======================
+# HEARTBEAT
+# =======================
+@app.post("/agent/heartbeat")
+async def heartbeat(data: dict):
+    agent_id = data["agent_id"]
+    if agent_id in agents:
+        agents[agent_id]["last_seen"] = time.time()
+        agents[agent_id]["status"] = "online"
+    return {"ok": True}
+
+# =======================
+# LIST AGENTS (DASHBOARD)
+# =======================
+@app.get("/agents")
+async def list_agents():
+    return list(agents.values())
+
+# =======================
+# WEBSOCKET (COMMAND CHANNEL)
+# =======================
+@app.websocket("/ws/{agent_id}")
+async def ws_agent(websocket: WebSocket, agent_id: str):
     await websocket.accept()
-    agents["main"] = websocket
-    print("[*] Agent Connected via ASGI")
+    ws_agents[agent_id] = websocket
+    print(f"[WS] Agent connected: {agent_id}")
+
     try:
         while True:
-            # استقبال الردود من وهران وتوجيهها للطلب الصحيح
-            data = await websocket.receive_json()
-            task_id = data.get("task_id")
-            if task_id in pending_tasks:
-                # تسليم النتيجة للـ Future المنتظر في دالة proxy_handler
-                pending_tasks[task_id].set_result(data)
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        agents.pop("main", None)
+        ws_agents.pop(agent_id, None)
+        if agent_id in agents:
+            agents[agent_id]["status"] = "offline"
+        print(f"[WS] Agent disconnected: {agent_id}")
 
-@app.api_route("/proxy", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_handler(request: Request, target_url: str):
-    if "main" not in agents:
-        return Response("Error: Oran Agent Offline", status_code=503)
-
-    task_id = str(uuid.uuid4())
-    body = await request.body()
-    
-    # إنشاء "وعد" (Future) لهذا الطلب تحديداً
-    loop = asyncio.get_event_loop()
-    future = loop.create_future()
-    pending_tasks[task_id] = future
-
-    try:
-        # إرسال الطلب لوهران
-        await agents["main"].send_json({
-            "task_id": task_id,
-            "url": target_url,
-            "method": request.method,
-            "body": base64.b64encode(body).decode('utf-8'),
-            "headers": dict(request.headers)
-        })
-
-        # انتظار الرد الخاص بهذا الـ task_id فقط
-        response_data = await asyncio.wait_for(future, timeout=30)
-        content = base64.b64decode(response_data["content"])
-        return Response(
-            content=content,
-            status_code=response_data["status"],
-            headers=response_data.get("headers", {})
-        )
-    except Exception as e:
-        return Response(f"Proxy Error: {str(e)}", status_code=504)
-    finally:
-        # تنظيف القاموس بعد الانتهاء
-        pending_tasks.pop(task_id, None)
-
-# تشغيل السيرفر بشكل صحيح ليدعم الـ WebSocket على Railway
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# =======================
+# CLEANUP OFFLINE AGENTS
+# =======================
+@app.on_event("startup")
+async def cleanup_loop():
+    async def loop():
+        while True:
+            now = time.time()
+            for a in agents.values():
+                if now - a["last_seen"] > 15:
+                    a["status"] = "offline"
+            await asyncio.sleep(5)
+    asyncio.create_task(loop())

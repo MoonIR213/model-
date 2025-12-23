@@ -6,30 +6,32 @@ import uuid
 app = FastAPI()
 agents = {}
 
+@app.get("/")
+async def health_check():
+    return {"status": "Server is running", "agent_connected": "main" in agents}
+
 @app.websocket("/ws/oran_pc")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     agents["main"] = websocket
-    print("[*] تم ربط حاسوب وهران بنجاح")
     try:
         while True:
+            # الحفاظ على الاتصال نشطاً
             await websocket.receive_text()
     except WebSocketDisconnect:
-        agents.pop("main", None)
-        print("[!] فقد الاتصال بحاسوب وهران")
+        if "main" in agents:
+            del agents["main"]
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def universal_proxy(request: Request, path: str):
+@app.api_route("/proxy", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_engine(request: Request, target_url: str):
     if "main" not in agents:
-        return Response("خطأ: حاسوب وهران غير متصل حالياً", status_code=503)
+        return Response("Error: Oran PC is offline", status_code=503)
 
-    # تجهيز الطلب القادم من بشار
-    body = await request.body()
-    target_url = str(request.url)
     ws = agents["main"]
     task_id = str(uuid.uuid4())
-
-    # إرسال البيانات عبر النفق
+    body = await request.body()
+    
+    # إرسال الطلب عبر نفق الـ WebSocket
     await ws.send_json({
         "task_id": task_id,
         "url": target_url,
@@ -39,14 +41,13 @@ async def universal_proxy(request: Request, path: str):
     })
 
     try:
-        # انتظار الرد من وهران (timeout 30 ثانية للطلبات الثقيلة)
+        # انتظار الرد من حاسوب وهران
         response_data = await asyncio.wait_for(ws.receive_json(), timeout=30)
         content = base64.b64decode(response_data["content"])
-        
         return Response(
             content=content,
             status_code=response_data["status"],
-            headers=response_data["headers"]
+            headers=response_data.get("headers", {})
         )
     except Exception:
-        return Response("فشل الاتصال عبر نفق وهران", status_code=504)
+        return Response("Timeout: No response from Oran", status_code=504)

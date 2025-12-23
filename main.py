@@ -1,73 +1,88 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import time
-import asyncio
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import Response, JSONResponse
+import asyncio, uuid, time
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+agents = {}              # agent_id -> {"ws": websocket, "last_seen": time}
+pending = {}             # request_id -> asyncio.Future
+OFFLINE_AFTER = 20       # seconds
 
-# ===============================
-# STORAGE
-# ===============================
-agents = {}  # agent_id -> data
-OFFLINE_AFTER = 10  # seconds
-
-# ===============================
-# API
-# ===============================
 @app.get("/")
 async def root():
     return {
         "status": "OK",
-        "message": "Agent Proxy Monitor Running",
-        "agents": "/agents"
+        "message": "Railway Tunnel Server Running",
+        "usage": "/proxy/{agent_id}?url=https://example.com"
     }
 
 @app.get("/agents")
-async def get_agents():
+async def list_agents():
     now = time.time()
-    result = []
-
-    for agent_id, a in agents.items():
-        status = "online" if now - a["last_seen"] < OFFLINE_AFTER else "offline"
-        result.append({
-            "ip": a["ip"],
-            "port": a["port"],
-            "type": a["type"],
-            "country": a["country"],
-            "latency": a["latency"],
-            "status": status
+    out = []
+    for aid, a in agents.items():
+        out.append({
+            "agent_id": aid,
+            "status": "online" if now - a["last_seen"] <= OFFLINE_AFTER else "offline",
+            "last_seen": a["last_seen"]
         })
+    return out
 
-    return result
+@app.api_route("/proxy/{agent_id}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy(agent_id: str, request: Request):
+    if agent_id not in agents:
+        return JSONResponse({"error": "Agent offline"}, status_code=404)
 
-# ===============================
-# WEBSOCKET (AGENT)
-# ===============================
+    target_url = request.query_params.get("url")
+    if not target_url:
+        return JSONResponse({"error": "Missing ?url="}, status_code=400)
+
+    req_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    pending[req_id] = fut
+
+    body = await request.body()
+    payload = {
+        "action": "proxy_request",
+        "request_id": req_id,
+        "method": request.method,
+        "url": target_url,
+        "headers": dict(request.headers),
+        "body": body.decode("utf-8", errors="ignore")
+    }
+
+    try:
+        await agents[agent_id]["ws"].send_json(payload)
+        resp = await asyncio.wait_for(fut, timeout=60)
+
+        return Response(
+            content=resp.get("body", b""),
+            status_code=resp.get("status", 200),
+            headers=resp.get("headers", {})
+        )
+
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "Agent timeout"}, status_code=504)
+    finally:
+        pending.pop(req_id, None)
+
 @app.websocket("/ws/{agent_id}")
-async def agent_ws(ws: WebSocket, agent_id: str):
+async def ws_agent(ws: WebSocket, agent_id: str):
     await ws.accept()
-    print(f"[+] Agent connected: {agent_id}")
+    agents[agent_id] = {"ws": ws, "last_seen": time.time()}
+    print(f"[CONNECTED] Agent {agent_id}")
 
     try:
         while True:
             data = await ws.receive_json()
+            agents[agent_id]["last_seen"] = time.time()
 
-            agents[agent_id] = {
-                "ip": data.get("ip"),
-                "port": data.get("port"),
-                "type": data.get("type"),
-                "country": data.get("country", "DZ"),
-                "latency": data.get("latency", 0),
-                "last_seen": time.time(),
-            }
+            if data.get("type") == "proxy_response":
+                rid = data.get("request_id")
+                if rid in pending:
+                    pending[rid].set_result(data)
 
     except WebSocketDisconnect:
-        print(f"[-] Agent disconnected: {agent_id}")
+        print(f"[DISCONNECTED] Agent {agent_id}")
+        agents.pop(agent_id, None)

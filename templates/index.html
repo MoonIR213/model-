@@ -1,71 +1,53 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>⚡ Agent Proxy Interface</title>
+<title>Agent Proxy Interface</title>
 <style>
-body{
-  background:#0b0f14;
-  color:#e5e7eb;
-  font-family:Segoe UI, Tahoma, sans-serif;
-}
-h1{margin:10px 0;}
-table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:10px;
-}
-th,td{
-  padding:10px;
-  border-bottom:1px solid #1f2937;
-  font-size:14px;
-}
-th{background:#111827;}
-.online{color:#22c55e;font-weight:bold;}
-.offline{color:#ef4444;font-weight:bold;}
-.badge{
-  padding:2px 6px;
-  border-radius:4px;
-  font-size:12px;
-}
+body{background:#0b0f14;color:#e5e7eb;font-family:Segoe UI}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #1f2937}
+th{background:#111827}
+.online{color:#22c55e}
+.offline{color:#ef4444}
 </style>
 </head>
 <body>
 
-<h1>⚡ Agent Proxy Interface</h1️
+<h1>⚡ Agent Proxy Interface</h1>
 <p>Live agents (auto refresh every 5s)</p>
 
 <table>
 <thead>
 <tr>
-  <th>Agent ID</th>
-  <th>Status</th>
-  <th>Last Seen (s)</th>
+<th>ID</th>
+<th>IP</th>
+<th>City</th>
+<th>Country</th>
+<th>Status</th>
 </tr>
 </thead>
-<tbody id="agents"></tbody>
+<tbody id="rows"></tbody>
 </table>
 
 <script>
-async function loadAgents(){
-  const res = await fetch("/agents");
-  const data = await res.json();
-  const tbody = document.getElementById("agents");
-  tbody.innerHTML = "";
-
+async function load(){
+  let r = await fetch("/agents");
+  let data = await r.json();
+  let html = "";
   data.forEach(a=>{
-    tbody.innerHTML += `
-      <tr>
-        <td>${a.agent_id}</td>
-        <td class="${a.status}">${a.status}</td>
-        <td>${a.last_seen}</td>
-      </tr>
-    `;
+    html += `<tr>
+      <td>${a.agent_id}</td>
+      <td>${a.ip || ""}</td>
+      <td>${a.city || ""}</td>
+      <td>${a.country || ""}</td>
+      <td class="${a.status}">${a.status}</td>
+    </tr>`;
   });
+  document.getElementById("rows").innerHTML = html;
 }
-
-loadAgents();
-setInterval(loadAgents, 5000);
+setInterval(load, 5000);
+load();
 </script>
 
 </body>

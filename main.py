@@ -1,87 +1,79 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
-import asyncio, time
+from fastapi.responses import Response, JSONResponse
+import asyncio, uuid, base64, time
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+agents = {}        # agent_id -> websocket
+pending = {}       # request_id -> Future
+
+# =========================
+# PROXY VIA LINK
+# =========================
+@app.api_route(
+    "/proxy/{agent_id}/{target:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
 )
+async def proxy(agent_id: str, target: str, request: Request):
+    if agent_id not in agents:
+        return JSONResponse({"error": "Agent offline"}, status_code=404)
 
-templates = Jinja2Templates(directory="templates")
+    request_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    pending[request_id] = fut
 
-# ======================
-# Storage
-# ======================
-agents = {}  # agent_id -> data
+    body = await request.body()
 
-OFFLINE_AFTER = 15  # seconds
-
-# ======================
-# Web UI
-# ======================
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-# ======================
-# API
-# ======================
-@app.get("/agents")
-async def list_agents():
-    return list(agents.values())
-
-@app.get("/status")
-async def status():
-    return {
-        "status": "Online",
-        "agents": len(agents)
+    payload = {
+        "type": "http_request",
+        "request_id": request_id,
+        "method": request.method,
+        "url": target,
+        "headers": dict(request.headers),
+        "body_base64": base64.b64encode(body).decode() if body else None
     }
 
-# ======================
-# WebSocket
-# ======================
+    try:
+        await agents[agent_id].send_json(payload)
+        resp = await asyncio.wait_for(fut, timeout=30)
+
+        content = base64.b64decode(resp.get("body_base64", "")) \
+                  if resp.get("body_base64") else b""
+
+        return Response(
+            content=content,
+            status_code=resp.get("status", 200),
+            headers=resp.get("headers", {})
+        )
+
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "Agent timeout"}, status_code=504)
+
+    finally:
+        pending.pop(request_id, None)
+
+# =========================
+# WEBSOCKET
+# =========================
 @app.websocket("/ws/{agent_id}")
-async def ws_agent(websocket: WebSocket, agent_id: str):
+async def ws(websocket: WebSocket, agent_id: str):
     await websocket.accept()
-
-    agents[agent_id] = {
-        "agent_id": agent_id,
-        "ip": websocket.client.host,
-        "type": "HTTPS",
-        "country": "DZ",
-        "city": agent_id.replace("_pc", "").upper(),
-        "latency": "-",
-        "status": "online",
-        "last_seen": time.time()
-    }
-
-    print(f"[+] Connected {agent_id}")
+    agents[agent_id] = websocket
+    print(f"[+] Agent connected: {agent_id}")
 
     try:
         while True:
-            await websocket.receive_text()   # heartbeat
-            agents[agent_id]["last_seen"] = time.time()
-            agents[agent_id]["status"] = "online"
-    except WebSocketDisconnect:
-        print(f"[-] Disconnected {agent_id}")
-        agents[agent_id]["status"] = "offline"
+            data = await websocket.receive_json()
+            if data.get("type") == "http_response":
+                rid = data.get("request_id")
+                if rid in pending and not pending[rid].done():
+                    pending[rid].set_result(data)
 
-# ======================
-# Cleanup Task
-# ======================
-@app.on_event("startup")
-async def cleanup_loop():
-    async def loop():
-        while True:
-            now = time.time()
-            for a in agents.values():
-                if now - a["last_seen"] > OFFLINE_AFTER:
-                    a["status"] = "offline"
-            await asyncio.sleep(5)
-    asyncio.create_task(loop())
+    except WebSocketDisconnect:
+        agents.pop(agent_id, None)
+        print(f"[-] Agent disconnected: {agent_id}")
+
+if __name__ == "__main__":
+    import uvicorn, os
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

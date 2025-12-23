@@ -7,31 +7,37 @@ app = FastAPI()
 agents = {}
 
 @app.get("/")
-async def health_check():
-    return {"status": "Server is running", "agent_connected": "main" in agents}
+async def status():
+    # صفحة للتأكد من حالة الاتصال
+    return {
+        "status": "Server is running",
+        "agent_connected": "main" in agents
+    }
 
 @app.websocket("/ws/oran_pc")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     agents["main"] = websocket
+    print("Agent from Oran connected")
     try:
         while True:
-            # الحفاظ على الاتصال نشطاً
+            # الحفاظ على الاتصال مفتوحاً
             await websocket.receive_text()
     except WebSocketDisconnect:
         if "main" in agents:
             del agents["main"]
+        print("Agent disconnected")
 
 @app.api_route("/proxy", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_engine(request: Request, target_url: str):
+async def proxy_handler(request: Request, target_url: str):
     if "main" not in agents:
-        return Response("Error: Oran PC is offline", status_code=503)
+        return Response("Error: Agent in Oran is not connected", status_code=503)
 
     ws = agents["main"]
     task_id = str(uuid.uuid4())
     body = await request.body()
     
-    # إرسال الطلب عبر نفق الـ WebSocket
+    # إرسال الطلب عبر النفق
     await ws.send_json({
         "task_id": task_id,
         "url": target_url,
@@ -42,12 +48,12 @@ async def proxy_engine(request: Request, target_url: str):
 
     try:
         # انتظار الرد من حاسوب وهران
-        response_data = await asyncio.wait_for(ws.receive_json(), timeout=30)
+        response_data = await asyncio.wait_for(ws.receive_json(), timeout=25)
         content = base64.b64decode(response_data["content"])
         return Response(
-            content=content,
+            content=content, 
             status_code=response_data["status"],
             headers=response_data.get("headers", {})
         )
     except Exception:
-        return Response("Timeout: No response from Oran", status_code=504)
+        return Response("Timeout: No response from Oran agent", status_code=504)

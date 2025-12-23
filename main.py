@@ -1,99 +1,79 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, Response, JSONResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
-import asyncio, uuid, time
+import uuid
+import asyncio
+import json
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-agents = {}      # agent_id -> {ws, last_seen, ip, city, country}
-pending = {}     # request_id -> Future
-OFFLINE_AFTER = 15  # seconds
+agents = {}          # agent_id -> websocket
+pending = {}         # request_id -> future
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def dashboard(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "agents": agents}
+        {"request": request, "agents": list(agents.keys())}
     )
 
 
-@app.get("/agents")
-async def agents_api():
-    now = time.time()
-    result = []
-    for aid, a in agents.items():
-        status = "online" if now - a["last_seen"] < OFFLINE_AFTER else "offline"
-        result.append({
-            "id": aid,
-            "ip": a.get("ip"),
-            "city": a.get("city"),
-            "country": a.get("country"),
-            "status": status
-        })
-    return result
-
-
-@app.api_route("/proxy/{agent_id}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy(agent_id: str, request: Request):
-    if agent_id not in agents:
-        return JSONResponse({"error": "Agent offline"}, status_code=404)
-
-    target_url = request.query_params.get("url")
-    if not target_url:
-        return JSONResponse({"error": "Missing ?url="}, status_code=400)
-
-    request_id = str(uuid.uuid4())
-    loop = asyncio.get_running_loop()
-    fut = loop.create_future()
-    pending[request_id] = fut
-
-    body = await request.body()
-
-    await agents[agent_id]["ws"].send_json({
-        "type": "proxy_request",
-        "request_id": request_id,
-        "method": request.method,
-        "url": target_url,
-        "headers": dict(request.headers),
-        "body": body.decode("utf-8", errors="ignore")
-    })
-
-    try:
-        res = await asyncio.wait_for(fut, timeout=40)
-        return Response(
-            content=res["body"].encode("utf-8", errors="ignore"),
-            status_code=res["status"],
-            headers=res["headers"]
-        )
-    except asyncio.TimeoutError:
-        return JSONResponse({"error": "Agent timeout"}, status_code=504)
-    finally:
-        pending.pop(request_id, None)
-
-
 @app.websocket("/ws/{agent_id}")
-async def ws_endpoint(ws: WebSocket, agent_id: str):
+async def agent_ws(ws: WebSocket, agent_id: str):
     await ws.accept()
-    agents[agent_id] = {
-        "ws": ws,
-        "last_seen": time.time(),
-        "ip": ws.client.host,
-        "city": agent_id.upper(),
-        "country": "DZ"
-    }
-    print(f"[+] Agent connected: {agent_id}")
+    agents[agent_id] = ws
+    print(f"[AGENT CONNECTED] {agent_id}")
 
     try:
         while True:
-            data = await ws.receive_json()
-            agents[agent_id]["last_seen"] = time.time()
+            data = await ws.receive_text()
+            msg = json.loads(data)
 
-            if data.get("type") == "proxy_response":
-                rid = data.get("request_id")
-                if rid in pending and not pending[rid].done():
-                    pending[rid].set_result(data)
+            if msg["type"] == "proxy_response":
+                rid = msg["request_id"]
+                if rid in pending:
+                    pending[rid].set_result(msg)
 
     except WebSocketDisconnect:
-        print(f"[-] Agent disconnected: {agent_id}")
+        print(f"[AGENT DISCONNECTED] {agent_id}")
+        agents.pop(agent_id, None)
+
+
+@app.api_route("/proxy/{agent_id}", methods=["GET", "POST"])
+async def proxy(agent_id: str, request: Request):
+    if agent_id not in agents:
+        return {"error": "Agent offline"}
+
+    body = await request.body()
+    request_id = str(uuid.uuid4())
+
+    payload = {
+        "type": "proxy_request",
+        "request_id": request_id,
+        "method": request.method,
+        "url": str(request.query_params.get("url")),
+        "headers": dict(request.headers),
+        "body": body.decode(errors="ignore")
+    }
+
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+    pending[request_id] = future
+
+    await agents[agent_id].send_text(json.dumps(payload))
+
+    try:
+        result = await asyncio.wait_for(future, timeout=60)
+    except asyncio.TimeoutError:
+        pending.pop(request_id, None)
+        return {"error": "Timeout"}
+
+    pending.pop(request_id, None)
+
+    return Response(
+        content=result["body"],
+        status_code=result["status"],
+        headers=result.get("headers", {})
+    )

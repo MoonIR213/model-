@@ -2,113 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Agent Interface</title>
-
+<title>Agent Proxy Interface</title>
 <style>
-body {
-    margin: 0;
-    background: #070c13;
-    color: #e5e7eb;
-    font-family: "Segoe UI", Arial, sans-serif;
+body{
+  background:#0b0f14;
+  color:#e5e7eb;
+  font-family:Segoe UI, Tahoma, sans-serif;
 }
-
-.header {
-    padding: 25px 40px;
-    background: linear-gradient(180deg, #0b1220, #060a14);
+h1{margin:10px 0;}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px;
 }
-
-.header h1 {
-    margin: 0;
-    font-size: 26px;
+th,td{
+  padding:8px 10px;
+  border-bottom:1px solid #1f2937;
+  font-size:14px;
 }
-
-.header small {
-    color: #9ca3af;
-}
-
-.container {
-    padding: 30px 40px;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #0e1625;
-}
-
-thead {
-    background: #111a2e;
-}
-
-th, td {
-    padding: 14px;
-    text-align: left;
-}
-
-th {
-    color: #c7d2fe;
-    font-weight: 600;
-}
-
-tbody tr {
-    border-bottom: 1px solid #1f2a3c;
-}
-
-.online {
-    color: #00ff88;
-    font-weight: bold;
-}
+th{background:#111827;}
+.online{color:#22c55e;}
+.offline{color:#ef4444;}
 </style>
 </head>
-
 <body>
 
-<div class="header">
-    <h1>⚡ Agent Interface</h1>
-    <small id="info">Loading agents...</small>
-</div>
+<h1>🛰 Agent Proxy Interface</h1>
+<p>Auto refresh every 5s</p>
 
-<div class="container">
-    <table>
-        <thead>
-            <tr>
-                <th>Agent ID</th>
-                <th>IP (REAL)</th>
-                <th>Hostname</th>
-                <th>Last Seen</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody id="agentTable"></tbody>
-    </table>
-</div>
+<table>
+<thead>
+<tr>
+<th>IP</th>
+<th>Type</th>
+<th>Country</th>
+<th>City</th>
+<th>Latency</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody id="agents"></tbody>
+</table>
 
 <script>
-async function loadAgents() {
-    const res = await fetch("/api/agents");
-    const data = await res.json();
+const API = "https://web-production-d9bf.up.railway.app/agents";
 
-    document.getElementById("info").innerText =
-        `Showing ${data.length} connected agents (auto refresh every 5s)`;
+async function loadAgents(){
+  const res = await fetch(API);
+  const agents = await res.json();
+  const tbody = document.getElementById("agents");
+  tbody.innerHTML = "";
 
-    const table = document.getElementById("agentTable");
-    table.innerHTML = "";
-
-    data.forEach(a => {
-        table.innerHTML += `
-        <tr>
-            <td>${a.agent_id}</td>
-            <td>${a.ip}</td>
-            <td>${a.hostname || "-"}</td>
-            <td>${a.last_seen}</td>
-            <td class="online">${a.status}</td>
-        </tr>
-        `;
-    });
+  agents.forEach(a=>{
+    tbody.innerHTML += `
+      <tr>
+        <td>${a.ip}</td>
+        <td>${a.type}</td>
+        <td>${a.country}</td>
+        <td>${a.city}</td>
+        <td>${a.latency ?? "-"}</td>
+        <td class="${a.status}">${a.status}</td>
+      </tr>
+    `;
+  });
 }
 
+setInterval(loadAgents,5000);
 loadAgents();
-setInterval(loadAgents, 5000);
 </script>
 
 </body>

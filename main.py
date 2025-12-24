@@ -1,58 +1,60 @@
-# server_tcp_relay.py
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import asyncio, json, base64, uuid
+# agent_tcp_relay_fixed.py
+import asyncio, websockets, json, socket, base64
 
-app = FastAPI()
+AGENT_ID = "oran_pc"
+SERVER = "wss://web-production-d9bf.up.railway.app/ws/" + AGENT_ID
 
-agents = {}
-sessions = {}
+async def tcp_relay(ws, session_id, host, port):
+    loop = asyncio.get_event_loop()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    await loop.sock_connect(sock, (host, port))
 
-@app.websocket("/ws/{agent_id}")
-async def ws_agent(ws: WebSocket, agent_id: str):
-    await ws.accept()
-    agents[agent_id] = ws
-    try:
-        while True:
-            msg = await ws.receive_text()
-            data = json.loads(msg)
+    async def from_target():
+        try:
+            while True:
+                data = await loop.sock_recv(sock, 4096)
+                if not data:
+                    break
+                await ws.send(json.dumps({
+                    "type": "tcp_data",
+                    "sid": session_id,
+                    "data": base64.b64encode(data).decode("ascii")
+                }))
+        finally:
+            await ws.send(json.dumps({
+                "type": "tcp_close",
+                "sid": session_id
+            }))
 
-            sid = sessions.get("current")
-            if sid:
-                client_ws = sessions[sid]["client"]
-                await client_ws.send_text(msg)
+    await from_target()
+    sock.close()
 
-    except WebSocketDisconnect:
-        agents.pop(agent_id, None)
+async def run():
+    while True:
+        try:
+            async with websockets.connect(SERVER, ping_interval=20) as ws:
+                print("[AGENT] Connected")
 
-@app.websocket("/tcp/{agent_id}")
-async def tcp_client(ws: WebSocket, agent_id: str):
-    await ws.accept()
+                while True:
+                    msg = json.loads(await ws.recv())
 
-    if agent_id not in agents:
-        await ws.close()
-        return
+                    if msg["type"] == "tcp_open":
+                        asyncio.create_task(
+                            tcp_relay(
+                                ws,
+                                msg["sid"],
+                                msg["host"],
+                                msg["port"]
+                            )
+                        )
 
-    agent_ws = agents[agent_id]
-    session_id = str(uuid.uuid4())
+                    elif msg["type"] == "tcp_data":
+                        # هذه البيانات قادمة من العميل → الهدف
+                        pass
 
-    sessions["current"] = {
-        "client": ws,
-        "agent": agent_ws
-    }
+        except Exception as e:
+            print("Reconnect in 5s:", e)
+            await asyncio.sleep(5)
 
-    try:
-        # أول رسالة من العميل تحدد الهدف
-        first = json.loads(await ws.receive_text())
-        await agent_ws.send_text(json.dumps({
-            "type": "tcp_open",
-            "host": first["host"],
-            "port": first["port"]
-        }))
-
-        while True:
-            msg = await ws.receive_text()
-            await agent_ws.send_text(msg)
-
-    except WebSocketDisconnect:
-        await agent_ws.send_text(json.dumps({"type": "tcp_close"}))
-        sessions.pop("current", None)
+asyncio.run(run())

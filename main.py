@@ -1,23 +1,38 @@
-# server_tcp_relay_full.py
+# server_tcp_relay_full_with_ips.py
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
-import json, uuid
+import json, uuid, time
 
 app = FastAPI()
 
 # =========================
 # Storage
 # =========================
-agents = {}     # agent_id -> websocket
+agents = {}     # agent_id -> {ws, ip, connected_at}
 clients = {}    # session_id -> client websocket
 
 
 # =========================
-# HTTP root (مهم جدًا لـ Railway)
+# HTTP root (مهم لـ Railway)
 # =========================
 @app.get("/")
 async def root():
     return PlainTextResponse("OK")
+
+
+# =========================
+# API: عرض الآيبيات المتصلة
+# =========================
+@app.get("/api/agents")
+async def list_agents():
+    return [
+        {
+            "agent_id": aid,
+            "ip": info["ip"],
+            "connected_at": info["connected_at"]
+        }
+        for aid, info in agents.items()
+    ]
 
 
 # =========================
@@ -26,8 +41,14 @@ async def root():
 @app.websocket("/ws/{agent_id}")
 async def ws_agent(ws: WebSocket, agent_id: str):
     await ws.accept()
-    agents[agent_id] = ws
-    print(f"[SERVER] Agent connected: {agent_id}")
+
+    agents[agent_id] = {
+        "ws": ws,
+        "ip": ws.client.host,
+        "connected_at": int(time.time())
+    }
+
+    print(f"[SERVER] Agent {agent_id} connected from {ws.client.host}")
 
     try:
         while True:
@@ -54,7 +75,7 @@ async def tcp_client(ws: WebSocket, agent_id: str):
         await ws.close()
         return
 
-    agent_ws = agents[agent_id]
+    agent_ws = agents[agent_id]["ws"]
     session_id = str(uuid.uuid4())
     clients[session_id] = ws
 

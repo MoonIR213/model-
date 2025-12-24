@@ -1,105 +1,68 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>🛰 Agent Proxy Interface</title>
+<meta charset="utf-8">
+<title>Agent Proxy Interface</title>
 <style>
 body{
   background:#0b0f14;
   color:#e5e7eb;
-  font-family:Segoe UI, Tahoma, sans-serif;
+  font-family:Segoe UI;
 }
-h1{margin:10px 0;}
 table{
   width:100%;
   border-collapse:collapse;
-  margin-top:10px;
 }
 th,td{
-  padding:8px 10px;
+  padding:10px;
   border-bottom:1px solid #1f2937;
-  font-size:14px;
 }
-th{background:#111827;}
-.online{color:#22c55e;}
-.badge{
-  padding:2px 6px;
-  border-radius:4px;
-  font-size:12px;
-}
-button{
-  background:#2563eb;
-  color:#fff;
-  border:none;
-  padding:6px 12px;
-  margin:6px;
-  border-radius:6px;
-  cursor:pointer;
-}
+th{background:#111827}
+.online{color:#22c55e}
+.offline{color:#ef4444}
 </style>
 </head>
 <body>
 
 <h1>🛰 Agent Proxy Interface</h1>
-<p id="count">Loading...</p>
-
-<button onclick="pickRandom()">🎲 Random</button>
-<button onclick="pickBest()">⚡ Best</button>
+<p id="count"></p>
 
 <table>
 <thead>
 <tr>
-  <th>IP</th>
-  <th>Agent ID</th>
-  <th>Country</th>
-  <th>City</th>
-  <th>Latency</th>
-  <th>Status</th>
+<th>IP</th><th>City</th><th>Country</th>
+<th>Latency</th><th>Status</th>
 </tr>
 </thead>
-<tbody id="tbody"></tbody>
+<tbody id="rows"></tbody>
 </table>
 
 <script>
-const API = "https://web-production-d9bf.up.railway.app";
-
-async function loadAgents(){
-  const r = await fetch(API + "/api/agents");
+async function load(){
+  const r = await fetch("/api/agents");
   const data = await r.json();
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
 
   document.getElementById("count").innerText =
-    `Showing ${data.length} agents (auto refresh every 5s)`;
+    `Showing ${data.length} agents`;
+
+  const rows = document.getElementById("rows");
+  rows.innerHTML = "";
 
   data.forEach(a=>{
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${a.ip}</td>
-      <td>${a.agent_id}</td>
-      <td>${a.country}</td>
-      <td>${a.city}</td>
-      <td>${a.latency ?? "-"} ms</td>
-      <td class="online">online</td>
+    rows.innerHTML += `
+      <tr>
+        <td>${a.ip}</td>
+        <td>${a.city}</td>
+        <td>${a.country}</td>
+        <td>${a.latency ?? "-"}</td>
+        <td class="${a.status}">${a.status}</td>
+      </tr>
     `;
-    tbody.appendChild(tr);
   });
 }
 
-async function pickRandom(){
-  const r = await fetch(API + "/api/agent/random");
-  const j = await r.json();
-  alert("Random Agent: " + j.agent_id);
-}
-
-async function pickBest(){
-  const r = await fetch(API + "/api/agent/best");
-  const j = await r.json();
-  alert("Best Agent: " + j.agent_id);
-}
-
-loadAgents();
-setInterval(loadAgents, 5000);
+setInterval(load, 5000);
+load();
 </script>
 
 </body>

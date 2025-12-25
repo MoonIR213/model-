@@ -1,24 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Agent Dashboard</title>
+<meta charset="utf-8">
+<title>Agent Monitor</title>
 <style>
 body {
-  background:#0b0f14;
-  color:#e5e7eb;
-  font-family:Segoe UI, sans-serif;
+    background:#0b0f14;
+    color:#e5e7eb;
+    font-family:Segoe UI, sans-serif;
 }
 table {
-  width:100%;
-  border-collapse:collapse;
-  margin-top:20px;
+    width:100%;
+    border-collapse:collapse;
+    margin-top:20px;
 }
-th,td {
-  padding:10px;
-  border-bottom:1px solid #1f2937;
+th, td {
+    padding:10px;
+    border-bottom:1px solid #1f2937;
 }
-th { background:#111827; }
+th {
+    background:#111827;
+}
 .online { color:#22c55e; font-weight:bold; }
 .offline { color:#ef4444; font-weight:bold; }
 </style>
@@ -30,36 +32,23 @@ th { background:#111827; }
 <table>
 <thead>
 <tr>
-  <th>Agent ID</th>
-  <th>Status</th>
-  <th>IP</th>
-  <th>City</th>
+<th>Agent ID</th>
+<th>Status</th>
+<th>IP</th>
+<th>City</th>
 </tr>
 </thead>
-<tbody id="agents"></tbody>
+<tbody>
+{% for a in agents %}
+<tr>
+<td>{{ a.agent_id }}</td>
+<td class="{{ a.status }}">{{ a.status }}</td>
+<td>{{ a.ip }}</td>
+<td>{{ a.city }}</td>
+</tr>
+{% endfor %}
+</tbody>
 </table>
-
-<script>
-async function load() {
-  const r = await fetch("/api/agents");
-  const data = await r.json();
-  const tb = document.getElementById("agents");
-  tb.innerHTML = "";
-  data.forEach(a => {
-    tb.innerHTML += `
-      <tr>
-        <td>${a.agent_id}</td>
-        <td class="${a.status}">
-          ${a.status === "online" ? "🟢 Online" : "🔴 Offline"}
-        </td>
-        <td>${a.ip || "-"}</td>
-        <td>${a.city}</td>
-      </tr>`;
-  });
-}
-load();
-setInterval(load, 5000);
-</script>
 
 </body>
 </html>

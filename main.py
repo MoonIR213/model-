@@ -1,67 +1,85 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 import time
 
 app = FastAPI()
+
 templates = Jinja2Templates(directory="model/templates")
 
-# agent_id -> info
-agents = {}
+# =========================
+# STORAGE
+# =========================
+agents = {}        # agent_id -> websocket
+agent_info = {}   # agent_id -> info dict
 
-# ======================
-# HTTP
-# ======================
+
+# =========================
+# HEALTH CHECK
+# =========================
 @app.get("/")
 async def root():
     return {"status": "OK"}
 
+
+# =========================
+# API
+# =========================
 @app.get("/api/agents")
 async def api_agents():
     now = time.time()
     data = []
-    for aid, info in agents.items():
-        status = "online" if now - info["last_seen"] < 10 else "offline"
+
+    for agent_id, info in agent_info.items():
+        status = "online" if now - info["last_seen"] < 15 else "offline"
         data.append({
-            "agent_id": aid,
+            "id": agent_id,
             "status": status,
-            "ip": info["ip"],
+            "ip": info.get("ip"),
             "city": info.get("city", "Unknown")
         })
+
     return data
 
+
+# =========================
+# DASHBOARD
+# =========================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "agents": await api_agents()}
-    )
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "agents": agent_info
+    })
 
-# ======================
-# WEBSOCKET (AGENT)
-# ======================
+
+# =========================
+# WEBSOCKET (THE MISSING PIECE)
+# =========================
 @app.websocket("/ws/agent/{agent_id}")
-async def ws_agent(ws: WebSocket, agent_id: str):
-    await ws.accept()
+async def ws_agent(websocket: WebSocket, agent_id: str):
+    await websocket.accept()
 
-    client = ws.client
-    ip = client.host if client else "unknown"
+    client_ip = websocket.client.host
 
-    agents[agent_id] = {
-        "ip": ip,
+    agents[agent_id] = websocket
+    agent_info[agent_id] = {
+        "ip": client_ip,
         "city": "Unknown",
         "last_seen": time.time()
     }
 
-    print(f"[AGENT] {agent_id} connected from {ip}")
+    print(f"[AGENT] {agent_id} connected from {client_ip}")
 
     try:
         while True:
-            await ws.receive_bytes()
-            agents[agent_id]["last_seen"] = time.time()
+            msg = await websocket.receive_bytes()
+            agent_info[agent_id]["last_seen"] = time.time()
 
     except WebSocketDisconnect:
         print(f"[AGENT] {agent_id} disconnected")
 
     finally:
         agents.pop(agent_id, None)
+        agent_info.pop(agent_id, None)

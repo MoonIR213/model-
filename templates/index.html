@@ -1,79 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8">
-  <title>Agent Monitor</title>
-
-  <style>
-    body {
-      background:#0b0f14;
-      color:#e5e7eb;
-      font-family:Segoe UI, sans-serif;
-      padding:20px;
-    }
-
-    h2 {
-      margin-bottom:15px;
-    }
-
-    table {
-      width:100%;
-      border-collapse:collapse;
-      margin-top:10px;
-    }
-
-    th, td {
-      padding:10px;
-      border-bottom:1px solid #1f2937;
-      text-align:left;
-    }
-
-    th {
-      background:#111827;
-    }
-
-    .online {
-      color:#22c55e;
-      font-weight:bold;
-    }
-
-    .offline {
-      color:#ef4444;
-      font-weight:bold;
-    }
-  </style>
+    <title>Relay Dashboard</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .online { background: #e6fffa; color: #2c7a7b; }
+        .offline { background: #fff5f5; color: #c53030; }
+    </style>
 </head>
 <body>
-
-<h2>🛰 Agent Monitor</h2>
-
-<table>
-<thead>
-<tr>
-  <th>Agent ID</th>
-  <th>Status</th>
-  <th>IP</th>
-  <th>City</th>
-</tr>
-</thead>
-
-<tbody>
-{% for id, a in agents.items() %}
-<tr>
-  <td>{{ id }}</td>
-
-  {% if now - a.last_seen < 20 %}
-    <td class="online">🟢 Online</td>
-  {% else %}
-    <td class="offline">🔴 Offline</td>
-  {% endif %}
-
-  <td>{{ a.ip }}</td>
-  <td>{{ a.city }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-
+    <h1>Connected Agents</h1>
+    <div id="agent-list">
+        {% for id, info in agents.items() %}
+        <div class="card">
+            <strong>ID:</strong> {{ id }} | <strong>IP:</strong> {{ info.ip }} | 
+            <span class="status online">Online</span>
+            <br><small>Last Seen: {{ (now - info.last_seen)|round(1) }}s ago</small>
+        </div>
+        {% endfor %}
+    </div>
+    <script>setTimeout(() => { location.reload(); }, 5000);</script>
 </body>
 </html>

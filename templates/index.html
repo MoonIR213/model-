@@ -1,32 +1,48 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Agent Monitor</title>
+  <meta charset="utf-8">
+  <title>Agent Monitor</title>
 
-<style>
-body {
-  background:#0b0f14;
-  color:#e5e7eb;
-  font-family:Segoe UI, sans-serif;
-}
-table {
-  width:100%;
-  border-collapse:collapse;
-  margin-top:20px;
-}
-th, td {
-  padding:10px;
-  border-bottom:1px solid #1f2937;
-}
-th {
-  background:#111827;
-}
-.online { color:#22c55e; }
-.offline { color:#ef4444; }
-</style>
+  <style>
+    body {
+      background:#0b0f14;
+      color:#e5e7eb;
+      font-family:Segoe UI, sans-serif;
+      padding:20px;
+    }
+
+    h2 {
+      margin-bottom:15px;
+    }
+
+    table {
+      width:100%;
+      border-collapse:collapse;
+      margin-top:10px;
+    }
+
+    th, td {
+      padding:10px;
+      border-bottom:1px solid #1f2937;
+      text-align:left;
+    }
+
+    th {
+      background:#111827;
+    }
+
+    .online {
+      color:#22c55e;
+      font-weight:bold;
+    }
+
+    .offline {
+      color:#ef4444;
+      font-weight:bold;
+    }
+  </style>
 </head>
-
 <body>
 
 <h2>🛰 Agent Monitor</h2>
@@ -38,7 +54,6 @@ th {
   <th>Status</th>
   <th>IP</th>
   <th>City</th>
-  <th>Last Seen (s)</th>
 </tr>
 </thead>
 
@@ -46,10 +61,15 @@ th {
 {% for id, a in agents.items() %}
 <tr>
   <td>{{ id }}</td>
-  <td class="{{ a.status }}">{{ a.status }}</td>
+
+  {% if now - a.last_seen < 20 %}
+    <td class="online">🟢 Online</td>
+  {% else %}
+    <td class="offline">🔴 Offline</td>
+  {% endif %}
+
   <td>{{ a.ip }}</td>
   <td>{{ a.city }}</td>
-  <td>{{ a.last_seen }}</td>
 </tr>
 {% endfor %}
 </tbody>

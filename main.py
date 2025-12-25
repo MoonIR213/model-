@@ -1,11 +1,10 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 import time
+import json
 
 app = FastAPI()
-
 templates = Jinja2Templates(directory="model/templates")
 
 # =========================
@@ -48,14 +47,14 @@ async def api_agents():
 # =========================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "agents": agent_info
-    })
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, "agents": agent_info}
+    )
 
 
 # =========================
-# WEBSOCKET (THE MISSING PIECE)
+# WEBSOCKET
 # =========================
 @app.websocket("/ws/agent/{agent_id}")
 async def ws_agent(websocket: WebSocket, agent_id: str):
@@ -74,8 +73,26 @@ async def ws_agent(websocket: WebSocket, agent_id: str):
 
     try:
         while True:
-            msg = await websocket.receive_bytes()
+            # ✅ استقبل TEXT وليس bytes
+            msg = await websocket.receive_text()
+            data = json.loads(msg)
+
             agent_info[agent_id]["last_seen"] = time.time()
+
+            # 🔁 ping → pong
+            if data.get("type") == "ping":
+                await websocket.send_text(json.dumps({
+                    "type": "pong",
+                    "timestamp": time.time()
+                }))
+
+            # ❤️ heartbeat
+            elif data.get("type") == "heartbeat":
+                pass
+
+            # 👋 hello
+            elif data.get("type") == "hello":
+                print(f"[HELLO] {agent_id}")
 
     except WebSocketDisconnect:
         print(f"[AGENT] {agent_id} disconnected")

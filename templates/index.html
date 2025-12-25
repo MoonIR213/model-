@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Relay Dashboard</title>
+    <title>Agent Monitor</title>
     <style>
-        body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
-        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
-        .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-        .online { background: #e6fffa; color: #2c7a7b; }
-        .offline { background: #fff5f5; color: #c53030; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a202c; color: white; padding: 40px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: #2d3748; padding: 20px; border-radius: 12px; border-left: 5px solid #48bb78; }
+        .ip { color: #a0aec0; font-family: monospace; }
+        .status { color: #48bb78; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>Connected Agents</h1>
-    <div id="agent-list">
+    <h2>Online Agents Control Panel</h2>
+    <div class="grid">
         {% for id, info in agents.items() %}
         <div class="card">
-            <strong>ID:</strong> {{ id }} | <strong>IP:</strong> {{ info.ip }} | 
-            <span class="status online">Online</span>
-            <br><small>Last Seen: {{ (now - info.last_seen)|round(1) }}s ago</small>
+            <div><strong>Agent ID:</strong> {{ id }}</div>
+            <div class="ip">IP Address: {{ info.ip }}</div>
+            <div class="status">● ONLINE</div>
+            <div style="font-size: 0.8em; margin-top:10px;">Seen {{ (now - info.last_seen)|round(1) }}s ago</div>
         </div>
         {% endfor %}
     </div>
-    <script>setTimeout(() => { location.reload(); }, 5000);</script>
+    <script>setTimeout(() => location.reload(), 3000);</script>
 </body>
 </html>

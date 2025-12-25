@@ -1,29 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Agent Monitor</title>
-<style>
-body {
-    background:#0b0f14;
-    color:#e5e7eb;
-    font-family:Segoe UI, sans-serif;
-}
-table {
-    width:100%;
-    border-collapse:collapse;
-    margin-top:20px;
-}
-th, td {
-    padding:10px;
-    border-bottom:1px solid #1f2937;
-}
-th {
-    background:#111827;
-}
-.online { color:#22c55e; font-weight:bold; }
-.offline { color:#ef4444; font-weight:bold; }
-</style>
+  <meta charset="utf-8">
+  <title>Agent Monitor</title>
+  <style>
+    body {
+      background:#0b0f14;
+      color:#e5e7eb;
+      font-family:Segoe UI, sans-serif;
+    }
+    table {
+      width:100%;
+      border-collapse:collapse;
+      margin-top:20px;
+    }
+    th, td {
+      padding:10px;
+      border-bottom:1px solid #1f2937;
+    }
+    th {
+      background:#111827;
+    }
+    .online { color:#22c55e; }
+    .offline { color:#ef4444; }
+  </style>
 </head>
 <body>
 
@@ -32,19 +32,19 @@ th {
 <table>
 <thead>
 <tr>
-<th>Agent ID</th>
-<th>Status</th>
-<th>IP</th>
-<th>City</th>
+  <th>Agent ID</th>
+  <th>Status</th>
+  <th>IP</th>
+  <th>City</th>
 </tr>
 </thead>
 <tbody>
-{% for a in agents %}
+{% for id, a in agents.items() %}
 <tr>
-<td>{{ a.agent_id }}</td>
-<td class="{{ a.status }}">{{ a.status }}</td>
-<td>{{ a.ip }}</td>
-<td>{{ a.city }}</td>
+  <td>{{ id }}</td>
+  <td class="online">Online</td>
+  <td>{{ a.ip }}</td>
+  <td>{{ a.city }}</td>
 </tr>
 {% endfor %}
 </tbody>

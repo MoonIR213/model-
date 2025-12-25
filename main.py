@@ -4,27 +4,37 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+# =========================
+# APP
+# =========================
 app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
 
+# agent_id -> info
 agents = {}
+
+# conn_id -> (client_ws, agent_ws)
 connections = {}
-OFFLINE_AFTER = 15
+
+OFFLINE_AFTER = 15  # seconds
 
 
+# =========================
+# ROOT
+# =========================
 @app.get("/")
 async def root():
     return {"status": "OK"}
 
 
 # =========================
-# DASHBOARD PAGE
+# DASHBOARD (UI)
 # =========================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
-        "dashboard.html",
+        "index.html",   # ✅ الملف الموجود فعليًا
         {"request": request}
     )
 
@@ -35,33 +45,39 @@ async def dashboard(request: Request):
 @app.get("/api/agents")
 async def api_agents():
     now = time.time()
-    out = []
+    result = []
 
-    for aid, info in agents.items():
+    for agent_id, info in agents.items():
         status = "online" if now - info["last_seen"] < OFFLINE_AFTER else "offline"
-        out.append({
-            "agent_id": aid,
+
+        result.append({
+            "agent_id": agent_id,
             "status": status,
             "ip": info["ip"],
             "city": info["city"],
         })
 
-    return out
+    return result
 
 
 # =========================
-# AGENT WS
+# AGENT WEBSOCKET
 # =========================
 @app.websocket("/ws/agent/{agent_id}")
 async def agent_ws(ws: WebSocket, agent_id: str):
     await ws.accept()
 
     ip = ws.client.host
+
+    # City detection (simple)
     city = "Unknown"
-    if "ANNABA" in agent_id.upper():
+    aid = agent_id.upper()
+    if "ANNABA" in aid:
         city = "Annaba"
-    elif "ORAN" in agent_id.upper():
+    elif "ORAN" in aid:
         city = "Oran"
+    elif "ALGIERS" in aid:
+        city = "Algiers"
 
     agents[agent_id] = {
         "ws": ws,
@@ -70,7 +86,7 @@ async def agent_ws(ws: WebSocket, agent_id: str):
         "last_seen": time.time(),
     }
 
-    print(f"[AGENT] {agent_id} connected")
+    print(f"[AGENT] {agent_id} connected from {ip}")
 
     try:
         while True:
@@ -92,7 +108,7 @@ async def agent_ws(ws: WebSocket, agent_id: str):
 
 
 # =========================
-# CLIENT WS
+# CLIENT WEBSOCKET
 # =========================
 @app.websocket("/ws/client/{agent_id}")
 async def client_ws(ws: WebSocket, agent_id: str):
@@ -106,11 +122,15 @@ async def client_ws(ws: WebSocket, agent_id: str):
     conn_id = str(uuid.uuid4())
     connections[conn_id] = (ws, agent_ws)
 
+    print(f"[CLIENT] New connection {conn_id} via {agent_id}")
+
     try:
         while True:
             data = await ws.receive_bytes()
             await agent_ws.send_bytes(conn_id.encode() + data)
+
     except WebSocketDisconnect:
         pass
     finally:
         connections.pop(conn_id, None)
+        print(f"[CLIENT] Closed {conn_id}")

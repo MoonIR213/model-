@@ -2,16 +2,15 @@ import uuid
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
 
-# agent_id -> info
-agents = {}
-# conn_id -> (client_ws, agent_ws)
-connections = {}
+templates = Jinja2Templates(directory="templates")
 
-OFFLINE_AFTER = 15  # seconds
+agents = {}
+connections = {}
+OFFLINE_AFTER = 15
 
 
 @app.get("/")
@@ -20,36 +19,44 @@ async def root():
 
 
 # =========================
-# API: LIST AGENTS
+# DASHBOARD PAGE
+# =========================
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request}
+    )
+
+
+# =========================
+# API: AGENTS LIST
 # =========================
 @app.get("/api/agents")
 async def api_agents():
     now = time.time()
-    data = []
+    out = []
 
     for aid, info in agents.items():
         status = "online" if now - info["last_seen"] < OFFLINE_AFTER else "offline"
-        data.append({
+        out.append({
             "agent_id": aid,
             "status": status,
             "ip": info["ip"],
             "city": info["city"],
-            "last_seen": int(now - info["last_seen"]),
         })
 
-    return data
+    return out
 
 
 # =========================
-# AGENT CONNECT
+# AGENT WS
 # =========================
 @app.websocket("/ws/agent/{agent_id}")
 async def agent_ws(ws: WebSocket, agent_id: str):
     await ws.accept()
 
-    client_ip = ws.client.host
-
-    # مدينة افتراضية (نغيرها لاحقًا)
+    ip = ws.client.host
     city = "Unknown"
     if "ANNABA" in agent_id.upper():
         city = "Annaba"
@@ -58,12 +65,12 @@ async def agent_ws(ws: WebSocket, agent_id: str):
 
     agents[agent_id] = {
         "ws": ws,
-        "ip": client_ip,
+        "ip": ip,
         "city": city,
         "last_seen": time.time(),
     }
 
-    print(f"[AGENT] {agent_id} connected from {client_ip}")
+    print(f"[AGENT] {agent_id} connected")
 
     try:
         while True:
@@ -85,7 +92,7 @@ async def agent_ws(ws: WebSocket, agent_id: str):
 
 
 # =========================
-# CLIENT CONNECT
+# CLIENT WS
 # =========================
 @app.websocket("/ws/client/{agent_id}")
 async def client_ws(ws: WebSocket, agent_id: str):

@@ -1,27 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Agent Monitor</title>
+    <title>Agent Monitor Pro</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a202c; color: white; padding: 40px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { background: #2d3748; padding: 20px; border-radius: 12px; border-left: 5px solid #48bb78; }
-        .ip { color: #a0aec0; font-family: monospace; }
-        .status { color: #48bb78; font-weight: bold; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; padding: 40px; }
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; border-top: 4px solid #10b981; max-width: 400px; }
+        .status { color: #10b981; font-weight: bold; animation: blink 2s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
-    <h2>Online Agents Control Panel</h2>
-    <div class="grid">
+    <h2>Locked Agent Control Panel</h2>
+    <div id="list">
         {% for id, info in agents.items() %}
         <div class="card">
-            <div><strong>Agent ID:</strong> {{ id }}</div>
-            <div class="ip">IP Address: {{ info.ip }}</div>
-            <div class="status">● ONLINE</div>
-            <div style="font-size: 0.8em; margin-top:10px;">Seen {{ (now - info.last_seen)|round(1) }}s ago</div>
+            <div><strong>ID:</strong> {{ id }}</div>
+            <div style="color: #94a3b8;">IP: {{ info.ip }}</div>
+            <div class="status">● SECURE CONNECTION ACTIVE</div>
+            <div style="font-size: 0.8em; margin-top:10px;">Ping: {{ (now - info.last_seen)|round(1) }}s ago</div>
         </div>
         {% endfor %}
     </div>
-    <script>setTimeout(() => location.reload(), 3000);</script>
+    <script>setTimeout(() => location.reload(), 5000);</script>
 </body>
 </html>

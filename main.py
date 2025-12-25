@@ -1,10 +1,24 @@
 import asyncio, os, time
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+security = HTTPBasic()
+
+# كلمة المرور المطلوبة
+ADMIN_PASSWORD = "041420521"
+
+def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
+    if credentials.password != ADMIN_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="كلمة مرور خاطئة",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # المخازن
 agents = {}        # agent_id -> WebSocket
@@ -12,7 +26,7 @@ agent_info = {}    # agent_id -> {ip, last_seen}
 client_links = {}  # client_ws -> (agent_ws, client_id_bytes)
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, _ = Depends(authenticate)):
     now = time.time()
     # تنظيف الوكلاء الخاملين (أكثر من 30 ثانية)
     active_agents = {aid: info for aid, info in agent_info.items() if now - info["last_seen"] < 30}
@@ -25,7 +39,8 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     agent_info[agent_id] = {"ip": ws.client.host, "last_seen": time.time()}
     try:
         while True:
-            data = await ws.receive_bytes()
+            # استخدام timeout لمنع تعليق الاتصال
+            data = await asyncio.wait_for(ws.receive_bytes(), timeout=40)
             agent_info[agent_id]["last_seen"] = time.time()
             if len(data) > 16:
                 target_id = data[:16]

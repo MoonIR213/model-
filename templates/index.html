@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
 <title>Agent Dashboard</title>
@@ -7,30 +7,25 @@
 body {
   background:#0b0f14;
   color:#e5e7eb;
-  font-family:Segoe UI, Tahoma, sans-serif;
+  font-family:Segoe UI, sans-serif;
 }
-h1 { margin:10px 0; }
 table {
   width:100%;
   border-collapse:collapse;
-  margin-top:15px;
+  margin-top:20px;
 }
-th, td {
+th,td {
   padding:10px;
   border-bottom:1px solid #1f2937;
-  font-size:14px;
 }
-th {
-  background:#111827;
-}
+th { background:#111827; }
 .online { color:#22c55e; font-weight:bold; }
 .offline { color:#ef4444; font-weight:bold; }
 </style>
 </head>
 <body>
 
-<h1>🛰 Agent Monitor</h1>
-<p>Auto refresh every 5s</p>
+<h2>🛰 Agent Monitor</h2>
 
 <table>
 <thead>
@@ -45,29 +40,25 @@ th {
 </table>
 
 <script>
-async function loadAgents() {
-  const res = await fetch("/api/agents");
-  const data = await res.json();
-
-  const tbody = document.getElementById("agents");
-  tbody.innerHTML = "";
-
+async function load() {
+  const r = await fetch("/api/agents");
+  const data = await r.json();
+  const tb = document.getElementById("agents");
+  tb.innerHTML = "";
   data.forEach(a => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${a.agent_id}</td>
-      <td class="${a.status}">
-        ${a.status === "online" ? "🟢 Online" : "🔴 Offline"}
-      </td>
-      <td>${a.ip || "-"}</td>
-      <td>${a.city}</td>
-    `;
-    tbody.appendChild(tr);
+    tb.innerHTML += `
+      <tr>
+        <td>${a.agent_id}</td>
+        <td class="${a.status}">
+          ${a.status === "online" ? "🟢 Online" : "🔴 Offline"}
+        </td>
+        <td>${a.ip || "-"}</td>
+        <td>${a.city}</td>
+      </tr>`;
   });
 }
-
-loadAgents();
-setInterval(loadAgents, 5000);
+load();
+setInterval(load, 5000);
 </script>
 
 </body>

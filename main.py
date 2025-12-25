@@ -1,26 +1,27 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-import time
-import json
+import time, json, os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
 app = FastAPI()
-templates = Jinja2Templates(directory="model/templates")
+
+templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
 # =========================
 # STORAGE
 # =========================
-agents = {}        # agent_id -> websocket
-agent_info = {}   # agent_id -> info dict
-
+agents = {}
+agent_info = {}
 
 # =========================
-# HEALTH CHECK
+# ROOT
 # =========================
 @app.get("/")
 async def root():
     return {"status": "OK"}
-
 
 # =========================
 # API
@@ -28,71 +29,77 @@ async def root():
 @app.get("/api/agents")
 async def api_agents():
     now = time.time()
-    data = []
+    out = []
 
-    for agent_id, info in agent_info.items():
-        status = "online" if now - info["last_seen"] < 15 else "offline"
-        data.append({
-            "id": agent_id,
-            "status": status,
-            "ip": info.get("ip"),
-            "city": info.get("city", "Unknown")
+    for aid, info in agent_info.items():
+        out.append({
+            "id": aid,
+            "status": "online" if now - info["last_seen"] < 15 else "offline",
+            "ip": info["ip"],
+            "city": info.get("city", "Unknown"),
+            "last_seen": int(now - info["last_seen"])
         })
 
-    return data
-
+    return out
 
 # =========================
-# DASHBOARD
+# DASHBOARD (SAFE)
 # =========================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "agents": agent_info}
-    )
+    try:
+        now = time.time()
+        view = {}
 
+        for aid, info in agent_info.items():
+            view[aid] = {
+                "ip": info["ip"],
+                "city": info.get("city", "Unknown"),
+                "status": "online" if now - info["last_seen"] < 15 else "offline",
+                "last_seen": int(now - info["last_seen"])
+            }
+
+        return templates.TemplateResponse(
+            "dashboard.html",
+            {"request": request, "agents": view}
+        )
+
+    except Exception as e:
+        # 🔥 يمنع 500
+        return HTMLResponse(
+            f"<h2>Dashboard Error</h2><pre>{str(e)}</pre>",
+            status_code=200
+        )
 
 # =========================
 # WEBSOCKET
 # =========================
 @app.websocket("/ws/agent/{agent_id}")
-async def ws_agent(websocket: WebSocket, agent_id: str):
-    await websocket.accept()
+async def ws_agent(ws: WebSocket, agent_id: str):
+    await ws.accept()
+    ip = ws.client.host
 
-    client_ip = websocket.client.host
-
-    agents[agent_id] = websocket
+    agents[agent_id] = ws
     agent_info[agent_id] = {
-        "ip": client_ip,
+        "ip": ip,
         "city": "Unknown",
         "last_seen": time.time()
     }
 
-    print(f"[AGENT] {agent_id} connected from {client_ip}")
+    print(f"[AGENT] {agent_id} connected from {ip}")
 
     try:
         while True:
-            # ✅ استقبل TEXT وليس bytes
-            msg = await websocket.receive_text()
+            msg = await ws.receive_text()
             data = json.loads(msg)
 
             agent_info[agent_id]["last_seen"] = time.time()
 
-            # 🔁 ping → pong
             if data.get("type") == "ping":
-                await websocket.send_text(json.dumps({
+                await ws.send_text(json.dumps({
                     "type": "pong",
                     "timestamp": time.time()
                 }))
-
-            # ❤️ heartbeat
-            elif data.get("type") == "heartbeat":
-                pass
-
-            # 👋 hello
-            elif data.get("type") == "hello":
-                print(f"[HELLO] {agent_id}")
 
     except WebSocketDisconnect:
         print(f"[AGENT] {agent_id} disconnected")

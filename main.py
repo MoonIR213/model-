@@ -1,15 +1,12 @@
-import asyncio
-import os
-import time
+import asyncio, os, time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
-
-# إعداد المجلد للقوالب (تأكد من وجود مجلد باسم templates)
 templates = Jinja2Templates(directory="templates")
 
+# المخازن
 agents = {}        # agent_id -> WebSocket
 agent_info = {}    # agent_id -> {ip, last_seen}
 client_links = {}  # client_ws -> (agent_ws, client_id_bytes)
@@ -17,7 +14,7 @@ client_links = {}  # client_ws -> (agent_ws, client_id_bytes)
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     now = time.time()
-    # تنظيف الوكلاء غير النشطين
+    # تنظيف الوكلاء الخاملين (أكثر من 30 ثانية)
     active_agents = {aid: info for aid, info in agent_info.items() if now - info["last_seen"] < 30}
     return templates.TemplateResponse("index.html", {"request": request, "agents": active_agents, "now": now})
 

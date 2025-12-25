@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -7,9 +6,11 @@ app = FastAPI()
 agents = {}        # agent_id -> websocket
 connections = {}  # conn_id -> (client_ws, agent_ws)
 
+
 @app.get("/")
 async def root():
     return {"status": "OK"}
+
 
 # =========================
 # AGENT CONNECT
@@ -23,11 +24,13 @@ async def agent_ws(ws: WebSocket, agent_id: str):
     try:
         while True:
             msg = await ws.receive_bytes()
-            conn_id = msg[:36].decode()
+            conn_id = msg[:36].decode(errors="ignore")
             payload = msg[36:]
+
             if conn_id in connections:
                 client_ws, _ = connections[conn_id]
                 await client_ws.send_bytes(payload)
+
     except WebSocketDisconnect:
         pass
     finally:
@@ -50,11 +53,15 @@ async def client_ws(ws: WebSocket, agent_id: str):
     conn_id = str(uuid.uuid4())
     connections[conn_id] = (ws, agent_ws)
 
+    print(f"[CLIENT] new conn {conn_id} via agent {agent_id}")
+
     try:
         while True:
             data = await ws.receive_bytes()
             await agent_ws.send_bytes(conn_id.encode() + data)
+
     except WebSocketDisconnect:
         pass
     finally:
         connections.pop(conn_id, None)
+        print(f"[CLIENT] closed {conn_id}")

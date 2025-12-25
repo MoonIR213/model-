@@ -1,4 +1,7 @@
-# server.py
+# =========================
+# server.py  (TCP Relay)
+# =========================
+
 import asyncio
 import json
 import time
@@ -13,14 +16,16 @@ templates = Jinja2Templates(directory="templates")
 # =========================
 # STORAGE
 # =========================
-agents = {}        # agent_id -> WebSocket
-agent_info = {}   # agent_id -> info
-client_links = {} # client_ws -> agent_ws
+
+agents = {}          # agent_id -> agent websocket
+agent_info = {}     # agent_id -> {ip, city, last_seen}
+client_links = {}   # client_ws -> agent_ws
 
 
 # =========================
 # ROOT
 # =========================
+
 @app.get("/")
 async def root():
     return {"status": "OK"}
@@ -29,68 +34,79 @@ async def root():
 # =========================
 # API
 # =========================
+
 @app.get("/api/agents")
 async def api_agents():
     now = time.time()
-    out = []
+    result = []
+
     for aid, info in agent_info.items():
-        out.append({
+        result.append({
             "id": aid,
-            "ip": info["ip"],
             "status": "online" if now - info["last_seen"] < 20 else "offline",
+            "ip": info.get("ip"),
+            "city": info.get("city", "Unknown"),
             "last_seen": info["last_seen"]
         })
-    return out
+
+    return result
 
 
 # =========================
 # DASHBOARD
 # =========================
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "agents": agent_info}
+        {
+            "request": request,
+            "agents": agent_info,
+            "now": time.time()
+        }
     )
 
 
 # =========================
-# AGENT WS
+# AGENT WEBSOCKET
 # =========================
+
 @app.websocket("/ws/agent/{agent_id}")
 async def ws_agent(ws: WebSocket, agent_id: str):
     await ws.accept()
-    ip = ws.client.host
+    client_ip = ws.client.host
 
     agents[agent_id] = ws
     agent_info[agent_id] = {
-        "ip": ip,
+        "ip": client_ip,
+        "city": "Unknown",
         "last_seen": time.time()
     }
 
-    print(f"[AGENT] {agent_id} connected from {ip}")
+    print(f"[AGENT CONNECTED] {agent_id} from {client_ip}")
 
     try:
         while True:
             msg = await ws.receive_text()
             data = json.loads(msg)
+
             agent_info[agent_id]["last_seen"] = time.time()
 
-            # ping / pong
+            # Forward TCP data to linked client
+            for client_ws, agent_ws in list(client_links.items()):
+                if agent_ws == ws:
+                    await client_ws.send_text(msg)
+
+            # Ping / Pong
             if data.get("type") == "ping":
                 await ws.send_text(json.dumps({
                     "type": "pong",
-                    "ts": time.time()
+                    "timestamp": time.time()
                 }))
 
-            # relay to client
-            if data.get("type") == "tcp_data":
-                for cws, aws in client_links.items():
-                    if aws == ws:
-                        await cws.send_text(msg)
-
     except WebSocketDisconnect:
-        print(f"[AGENT] {agent_id} disconnected")
+        print(f"[AGENT DISCONNECTED] {agent_id}")
 
     finally:
         agents.pop(agent_id, None)
@@ -98,8 +114,9 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 
 
 # =========================
-# CLIENT WS (Relay)
+# CLIENT WEBSOCKET
 # =========================
+
 @app.websocket("/ws/client/{agent_id}")
 async def ws_client(ws: WebSocket, agent_id: str):
     await ws.accept()
@@ -110,16 +127,29 @@ async def ws_client(ws: WebSocket, agent_id: str):
         return
 
     client_links[ws] = agent_ws
-    print(f"[CLIENT] linked to {agent_id}")
+    print(f"[CLIENT CONNECTED] using agent {agent_id}")
+
+    async def client_to_agent():
+        try:
+            while True:
+                msg = await ws.receive_text()
+                await agent_ws.send_text(msg)
+        except:
+            pass
+
+    async def agent_to_client():
+        try:
+            while True:
+                msg = await agent_ws.receive_text()
+                await ws.send_text(msg)
+        except:
+            pass
 
     try:
-        while True:
-            msg = await ws.receive_text()
-            await agent_ws.send_text(msg)
-
-    except WebSocketDisconnect:
-        pass
-
+        await asyncio.gather(
+            client_to_agent(),
+            agent_to_client()
+        )
     finally:
         client_links.pop(ws, None)
-        print("[CLIENT] disconnected")
+        print("[CLIENT DISCONNECTED]")

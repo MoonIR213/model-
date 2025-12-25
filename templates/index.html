@@ -1,26 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Agent Monitor Pro</title>
+    <title>Locked Control Pro</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; padding: 40px; }
-        .card { background: #1e293b; padding: 20px; border-radius: 12px; border-top: 4px solid #10b981; max-width: 400px; }
-        .status { color: #10b981; font-weight: bold; animation: blink 2s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; padding: 40px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: #1e293b; padding: 25px; border-radius: 16px; border-top: 5px solid #10b981; width: 400px; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
+        .status { color: #10b981; font-weight: bold; }
+        .details { color: #94a3b8; font-family: monospace; font-size: 0.9em; margin-top: 5px; }
+        .alert { background: #7f1d1d; color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; }
     </style>
 </head>
 <body>
-    <h2>Locked Agent Control Panel</h2>
-    <div id="list">
+    <h1>Locked Control Panel</h1>
+    <div id="status-box">
         {% for id, info in agents.items() %}
         <div class="card">
-            <div><strong>ID:</strong> {{ id }}</div>
-            <div style="color: #94a3b8;">IP: {{ info.ip }}</div>
-            <div class="status">● SECURE CONNECTION ACTIVE</div>
-            <div style="font-size: 0.8em; margin-top:10px;">Ping: {{ (now - info.last_seen)|round(1) }}s ago</div>
+            <strong>Agent ID:</strong> {{ id }}
+            <div class="details">IP: {{ info.ip }}</div>
+            <div class="status">● SECURE & STABLE</div>
+            <div style="font-size: 0.8em; color: #64748b; margin-top: 10px;">Last Sync: {{ (now - info.last_seen)|round(1) }}s ago</div>
         </div>
+        {% else %}
+        <p style="color: #64748b;">Waiting for agent to connect...</p>
         {% endfor %}
     </div>
-    <script>setTimeout(() => location.reload(), 5000);</script>
+    <script>
+        // تحديث كل 3 ثواني بدلاً من 5 لزيادة دقة المراقبة
+        setTimeout(() => location.reload(), 3000);
+    </script>
 </body>
 </html>

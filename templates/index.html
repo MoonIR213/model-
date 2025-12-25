@@ -1,68 +1,73 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Agent Proxy Interface</title>
+<meta charset="UTF-8">
+<title>Agent Dashboard</title>
 <style>
-body{
+body {
   background:#0b0f14;
   color:#e5e7eb;
-  font-family:Segoe UI;
+  font-family:Segoe UI, Tahoma, sans-serif;
 }
-table{
+h1 { margin:10px 0; }
+table {
   width:100%;
   border-collapse:collapse;
+  margin-top:15px;
 }
-th,td{
+th, td {
   padding:10px;
   border-bottom:1px solid #1f2937;
+  font-size:14px;
 }
-th{background:#111827}
-.online{color:#22c55e}
-.offline{color:#ef4444}
+th {
+  background:#111827;
+}
+.online { color:#22c55e; font-weight:bold; }
+.offline { color:#ef4444; font-weight:bold; }
 </style>
 </head>
 <body>
 
-<h1>🛰 Agent Proxy Interface</h1>
-<p id="count"></p>
+<h1>🛰 Agent Monitor</h1>
+<p>Auto refresh every 5s</p>
 
 <table>
 <thead>
 <tr>
-<th>IP</th><th>City</th><th>Country</th>
-<th>Latency</th><th>Status</th>
+  <th>Agent ID</th>
+  <th>Status</th>
+  <th>IP</th>
+  <th>City</th>
 </tr>
 </thead>
-<tbody id="rows"></tbody>
+<tbody id="agents"></tbody>
 </table>
 
 <script>
-async function load(){
-  const r = await fetch("/api/agents");
-  const data = await r.json();
+async function loadAgents() {
+  const res = await fetch("/api/agents");
+  const data = await res.json();
 
-  document.getElementById("count").innerText =
-    `Showing ${data.length} agents`;
+  const tbody = document.getElementById("agents");
+  tbody.innerHTML = "";
 
-  const rows = document.getElementById("rows");
-  rows.innerHTML = "";
-
-  data.forEach(a=>{
-    rows.innerHTML += `
-      <tr>
-        <td>${a.ip}</td>
-        <td>${a.city}</td>
-        <td>${a.country}</td>
-        <td>${a.latency ?? "-"}</td>
-        <td class="${a.status}">${a.status}</td>
-      </tr>
+  data.forEach(a => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${a.agent_id}</td>
+      <td class="${a.status}">
+        ${a.status === "online" ? "🟢 Online" : "🔴 Offline"}
+      </td>
+      <td>${a.ip || "-"}</td>
+      <td>${a.city}</td>
     `;
+    tbody.appendChild(tr);
   });
 }
 
-setInterval(load, 5000);
-load();
+loadAgents();
+setInterval(loadAgents, 5000);
 </script>
 
 </body>
